@@ -1,0 +1,99 @@
+{
+  "customValues": {
+    "review_link": "REPLACE-WITH-CLIENT-GOOGLE-ID",
+    "office_phone": "(555) 010-9900"
+  },
+  "workflows": [
+    {
+      "_id": "wf_noshow",
+      "name": "No Show Recovery",
+      "status": "published",
+      "triggers": [
+        {"type": "appointment", "name": "Appointment Status", "filters": []}
+      ],
+      "steps": [
+        {"type": "sms", "name": "Sorry we missed you",
+         "meta": {"body": "Sorry we missed you today — want to grab another time?"}},
+        {"type": "wait", "name": "Wait 2 days", "meta": {"delay": "2 days"}},
+        {"type": "email", "name": "Second attempt",
+         "meta": {"body": "Still happy to find you a slot."}},
+        {"type": "create_opportunity", "name": "Create opportunity"}
+      ],
+      "settings": {"allowReentry": true}
+    },
+    {
+      "_id": "wf_missedcall",
+      "name": "Missed Call Text Back",
+      "status": "published",
+      "triggers": [{"type": "call_status", "name": "Call Status", "filters": []}],
+      "steps": [
+        {"type": "sms", "name": "Text back immediately",
+         "meta": {"body": "Sorry we missed your call! How can we help?"}},
+        {"type": "wait", "name": "Wait 4 hours"},
+        {"type": "email", "name": "Follow up by email",
+         "meta": {"body": "Following up on your call."}}
+      ]
+    },
+    {
+      "_id": "wf_reminders",
+      "name": "Strategy Call - Booking & Reminders",
+      "status": "published",
+      "triggers": [
+        {"type": "customer_booked_appointment", "name": "Booked",
+         "filters": [{"field": "appointment_status", "value": "confirmed"}]}
+      ],
+      "steps": [
+        {"type": "sms", "name": "Confirmation", "meta": {"body": "You're booked."}},
+        {"type": "wait", "name": "Until 24 hours before"},
+        {"type": "sms", "name": "24 hour reminder",
+         "meta": {"body": "Reminder — your call is tomorrow."}},
+        {"type": "wait", "name": "Until 1 hour before"},
+        {"type": "sms", "name": "1 hour reminder",
+         "meta": {"body": "Your call starts in 1 hour."}}
+      ],
+      "settings": {"sendingWindow": {"start": "09:00", "end": "20:00"}}
+    },
+    {
+      "_id": "wf_reactivation",
+      "name": "Database Reactivation - Cold List",
+      "status": "published",
+      "triggers": [{"type": "contact_tag_added", "name": "Tag: reactivate",
+                    "filters": [{"tag": "reactivate"}]}],
+      "steps": [
+        {"type": "email", "name": "Is this still live?",
+         "meta": {"body": "Quick one — is this still something you're working on?"}},
+        {"type": "wait", "name": "Wait 3 days"},
+        {"type": "sms", "name": "Nudge", "meta": {"body": "Just checking back."}},
+        {"type": "webhook", "name": "Push to reporting",
+         "meta": {"url": "https://hooks.zapier.com/hooks/catch/8811223/abcdef/"}}
+      ]
+    },
+    {
+      "_id": "wf_review",
+      "name": "Review Request After Close",
+      "status": "published",
+      "triggers": [{"type": "contact_tag_added", "name": "Tag: job-complete",
+                    "filters": [{"tag": "job-complete"}]}],
+      "steps": [
+        {"type": "if_else", "name": "Had a complaint or refund - skip",
+         "meta": {"conditions": [{"tag": "complaint"}, {"tag": "refund"}]}},
+        {"type": "wait", "name": "Wait 7 days"},
+        {"type": "email", "name": "Ask for the review",
+         "meta": {"body": "How did we do? {{ custom_values.review_link }}"}},
+        {"type": "internal_notification", "name": "Alert the team"},
+        {"type": "wait", "name": "Wait 3 days"},
+        {"type": "sms", "name": "Nudge with the link",
+         "meta": {"body": "Here's the link: {{ custom_values.review_link }}"}},
+        {"type": "internal_notification", "name": "Alert the team"}
+      ]
+    },
+    {
+      "_id": "wf_sandbox",
+      "name": "ZZ SANDBOX - branch probe (do not use)",
+      "status": "published",
+      "triggers": [],
+      "steps": [{"type": "sms", "name": "test",
+                 "meta": {"body": "TODO write the real copy"}}]
+    }
+  ]
+}
