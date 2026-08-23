@@ -65,7 +65,7 @@
         {"type": "wait", "name": "Wait 3 days"},
         {"type": "sms", "name": "Nudge", "meta": {"body": "Just checking back."}},
         {"type": "webhook", "name": "Push to reporting",
-         "meta": {"url": "https://hooks.zapier.com/hooks/catch/8811223/abcdef/"}}
+         "meta": {"url": "https://hooks.example.com/inbound/reporting"}}
       ]
     },
     {

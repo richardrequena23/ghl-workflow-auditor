@@ -125,7 +125,7 @@ class TimingRules(unittest.TestCase):
 class PortabilityRules(unittest.TestCase):
     def test_hardcoded_webhook_url(self):
         steps = [{"type": "webhook", "name": "Push",
-                  "meta": {"url": "https://hooks.zapier.com/hooks/catch/1/2/"}}]
+                  "meta": {"url": "https://hooks.example.com/inbound/1"}}]
         self.assertIn("GHL006", rules_hit([wf("Attribution", steps)]))
 
     def test_custom_value_webhook_url_passes(self):
