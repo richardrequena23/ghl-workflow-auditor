@@ -299,13 +299,56 @@ def _bar(score: int) -> str:
             f'style="width:{max(0, min(100, score))}%"></div></div>')
 
 
+def _executive_summary(hs: HealthScore, workflows: int) -> list[str]:
+    """Two to four sentences a business owner reads before anything else.
+
+    Every clause is computed from the findings — nothing templated in that the
+    data does not support. The block exists because the person paying for the
+    audit often forwards exactly one paragraph of it, and that paragraph should
+    be the right one.
+    """
+    c = hs.counts
+    out = [f"This audit reviewed {workflows} published workflow"
+           f"{'s' if workflows != 1 else ''} ({hs.coverage}). "]
+    if not hs.findings:
+        out.append("No defects were found: every workflow passed every check "
+                   "that ran. The remaining work is maintenance — re-run this "
+                   "audit after the next round of changes, not repairs.")
+        return out
+
+    parts = [f"{c[s]} {SEVERITY_LABEL[s].lower()}" for s in SEVERITIES if c[s]]
+    out.append(f"It found {len(hs.findings)} defect"
+               f"{'s' if len(hs.findings) != 1 else ''} "
+               f"({', '.join(parts)}), for an overall health score of "
+               f"{hs.score}/100 — grade {hs.grade}. ")
+
+    assessed = [x for x in hs.categories if x.assessed and x.findings]
+    if assessed:
+        worst = min(assessed, key=lambda x: x.score)
+        out.append(f"The damage is heaviest in {worst.label.lower()} "
+                   f"({worst.score}/100). ")
+
+    top = hs.ranked[0]
+    lead = (f"The single most expensive problem is in the "
+            f"“{top.workflow}” workflow: "
+            f"{top.title[:1].lower()}{top.title[1:].rstrip('.')}.")
+    if top.cost:
+        lead += f" {top.cost.rstrip('.')}."
+    out.append(lead + " Start there — the full ranking is below.")
+    return out
+
+
 def as_html(findings: list[Finding], workflows: int, skips=None,
-            account_name: str = "", generated: str = "") -> str:
+            account_name: str = "", generated: str = "",
+            prepared_by: str = "") -> str:
     """A single self-contained page. No external requests, inline CSS only.
 
     Poppins is named first and falls back to Helvetica/Arial rather than being
     fetched, because a report that needs the network is a report that renders
     wrong in an email client, on a plane, and in six months.
+
+    `prepared_by` is the auditor's own name; it lands in the header and footer
+    so the deliverable carries its author without carrying any tool branding.
     """
     hs = _scored(findings, workflows, skips)
     stamp = generated or datetime.date.today().isoformat()
@@ -321,8 +364,9 @@ def as_html(findings: list[Finding], workflows: int, skips=None,
     p.append(f"<style>{CSS}</style></head><body><div class=\"wrap\">")
 
     p.append("<h1>GoHighLevel account audit</h1>")
+    byline = f" &middot; Prepared by {_esc(prepared_by)}" if prepared_by else ""
     p.append(f"<p class=\"sub\">{title}{workflows} published workflows reviewed"
-             f" &middot; {hs.coverage} &middot; {_esc(stamp)}</p>")
+             f" &middot; {hs.coverage} &middot; {_esc(stamp)}{byline}</p>")
 
     dial_cls = "n bad" if hs.score < 70 else "n"
     tally = " &middot; ".join(
@@ -335,6 +379,10 @@ def as_html(findings: list[Finding], workflows: int, skips=None,
         f'<div class="g">Grade {hs.grade}</div></div><div>'
         f'<p class="verdict">{_esc(hs.verdict)}</p>'
         f'<p class="tally">{tally}</p></div></div>')
+
+    # ---- executive summary
+    p.append("<h2>Executive summary</h2>")
+    p.append("<p>" + _esc("".join(_executive_summary(hs, workflows))) + "</p>")
 
     # ---- categories
     p.append("<h2>Where the damage is</h2>")
@@ -429,6 +477,8 @@ def as_html(findings: list[Finding], workflows: int, skips=None,
         "is sound — not that nothing is wrong.</p>")
 
     p.append("<footer>")
+    if prepared_by:
+        p.append(f"<p>Prepared by {_esc(prepared_by)}.</p>")
     p.append(f"<p>Generated {_esc(stamp)} by ghlaudit — {len(RULES)} checks, "
              "open source. Every rule is readable before you trust its "
              "output.</p>")

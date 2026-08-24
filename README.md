@@ -93,7 +93,16 @@ python -m ghlaudit account.json --config client.json       # account-specific co
 python -m ghlaudit account.json --rule GHL001 --rule GHL019
 python -m ghlaudit account.json --fail-on critical         # exit 1 in CI
 python -m ghlaudit --list-rules
+python -m ghlaudit account.json --html audit.html \
+    --account-name "Acme Roofing" --prepared-by "Your Name"
 ```
+
+The HTML report is the client deliverable: a single self-contained file (inline CSS, no
+external requests, print-clean) that opens with the health score, a computed executive
+summary — findings tally, the worst category, and the single most expensive defect,
+every clause derived from the data — then per-category grades, and the full findings
+list ranked by cost. `--prepared-by` puts the auditor's name in the header and footer
+(and nothing else brands the page); pass an empty string to omit it.
 
 As a library:
 

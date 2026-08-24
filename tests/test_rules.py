@@ -4,6 +4,7 @@ A rule that only ever fires is as useless as one that never does — the false
 positive is what makes people stop reading the report.
 """
 
+import html as html_mod
 import json
 import os
 import sys
@@ -1344,6 +1345,51 @@ class Reporting(unittest.TestCase):
         findings, skips = audit_all([wf("Seq", [sms("a"), sms("b")])])
         page = as_html(findings, 1, skips)
         self.assertIn("could not check", page)
+
+    def test_prepared_by_lands_in_header_and_footer(self):
+        from ghlaudit.report import as_html
+        page = as_html(self.findings, self.n, self.skips,
+                       prepared_by="Dana <Auditor>")
+        self.assertEqual(page.count("Prepared by Dana &lt;Auditor&gt;"), 2)
+
+    def test_no_prepared_by_means_no_byline(self):
+        from ghlaudit.report import as_html
+        self.assertNotIn("Prepared by",
+                         as_html(self.findings, self.n, self.skips))
+
+    def test_executive_summary_names_the_most_expensive_finding(self):
+        from ghlaudit.report import as_html
+        from ghlaudit.score import health
+        page = as_html(self.findings, self.n, self.skips)
+        top = health(self.findings, self.skips, self.n).ranked[0]
+        self.assertIn("Executive summary", page)
+        summary = page.split("Executive summary")[1].split("<h2>")[0]
+        self.assertIn(html_mod.escape(top.workflow, quote=False), summary)
+
+    def test_executive_summary_on_a_clean_account_says_so(self):
+        from ghlaudit.report import as_html
+        summary = as_html([], 3, []).split("Executive summary")[1]
+        self.assertIn("No defects were found", summary.split("<h2>")[0])
+
+    def test_cli_html_carries_the_default_byline(self):
+        import tempfile
+        from ghlaudit.cli import main
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "r.html")
+            self.assertEqual(main([EXAMPLE, "-f", "html", "-o", out]), 0)
+            with open(out) as fh:
+                page = fh.read()
+        self.assertIn("Prepared by Richard Requena", page)
+
+    def test_cli_byline_can_be_switched_off(self):
+        import tempfile
+        from ghlaudit.cli import main
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "r.html")
+            main([EXAMPLE, "-f", "html", "-o", out, "--prepared-by", ""])
+            with open(out) as fh:
+                page = fh.read()
+        self.assertNotIn("Prepared by", page)
 
 
 class ConfigLoading(unittest.TestCase):

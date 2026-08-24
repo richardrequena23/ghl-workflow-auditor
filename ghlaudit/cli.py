@@ -75,6 +75,9 @@ def main(argv=None) -> int:
                          "(default 90)")
     ap.add_argument("--account-name", metavar="NAME",
                     help="client name, printed on the HTML report")
+    ap.add_argument("--prepared-by", metavar="NAME", default="Richard Requena",
+                    help="auditor's name, printed on the HTML report "
+                         "(pass an empty string for none)")
     ap.add_argument("--list-rules", action="store_true")
     ap.add_argument("--fail-on", choices=SEVERITIES,
                     help="exit 1 if anything at least this severe is found (for CI)")
@@ -97,7 +100,12 @@ def main(argv=None) -> int:
     findings, skips = run_all(acct, min_severity=args.min_severity,
                               only=args.rule)
     count = len(acct.workflows)
-    rendered = RENDERERS[args.format](findings, count, skips)
+    if args.format == "html":
+        rendered = as_html(findings, count, skips,
+                           account_name=args.account_name or "",
+                           prepared_by=args.prepared_by)
+    else:
+        rendered = RENDERERS[args.format](findings, count, skips)
 
     if args.out:
         with open(args.out, "w") as fh:
@@ -110,7 +118,8 @@ def main(argv=None) -> int:
     # HTML is for the client, and an audit usually wants both in one pass.
     if args.html and not (args.format == "html" and args.out):
         page = as_html(findings, count, skips,
-                       account_name=args.account_name or "")
+                       account_name=args.account_name or "",
+                       prepared_by=args.prepared_by)
         with open(args.html, "w") as fh:
             fh.write(page + "\n")
         print(f"wrote {args.html} (client report, {len(findings)} findings)",
