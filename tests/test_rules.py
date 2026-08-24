@@ -1392,6 +1392,15 @@ class Reporting(unittest.TestCase):
         self.assertNotIn("Prepared by", page)
 
 
+class StepConfigAliases(unittest.TestCase):
+    def test_attributes_is_read_as_the_settings_holder(self):
+        """GHL's own builder API nests step settings under `attributes`."""
+        from ghlaudit.model import parse_step
+        step = parse_step({"type": "sms", "name": "x",
+                           "attributes": {"body": "hi"}})
+        self.assertEqual(step.config().get("body"), "hi")
+
+
 class ConfigLoading(unittest.TestCase):
     def test_an_empty_config_is_valid(self):
         cfg = AuditConfig.from_dict({})
