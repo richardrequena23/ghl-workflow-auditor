@@ -415,6 +415,197 @@ def published_sandbox(acct: Account):
                 "Unpublish it, or rename it if it is genuinely production.")
 
 
+# --------------------------------------------------------------------------
+# Workflows that trigger each other — nothing in the UI shows this
+# --------------------------------------------------------------------------
+
+def _allows_reentry(wf: Workflow) -> bool:
+    blob = json.dumps(wf.settings).lower()
+    return any(k in blob for k in ("allowmultiple", "allow_multiple", "reentry",
+                                   "re_entry", "allowreentry")) and "false" not in blob
+
+
+@rule("GHL014", "Workflows re-trigger each other through tags", "critical", "triggers", "data")
+def tag_trigger_loop(acct: Account):
+    pubs = list(acct.published())
+    by_id = {w.id: w for w in pubs}
+    listeners: dict[str, list[str]] = {}
+    for w in pubs:
+        for tag in w.trigger_tags():
+            listeners.setdefault(tag, []).append(w.id)
+    edges: dict[str, set[str]] = {}
+    for w in pubs:
+        for tag in w.tags_added():
+            for other in listeners.get(tag, []):
+                edges.setdefault(w.id, set()).add(other)
+
+    reported: set[frozenset] = set()
+
+    def cycles_from(start: str, node: str, path: list[str]):
+        for nxt in sorted(edges.get(node, ())):
+            if nxt == start:
+                yield path[:]
+            elif nxt not in path:
+                yield from cycles_from(start, nxt, path + [nxt])
+
+    for start in sorted(edges):
+        for cycle in cycles_from(start, start, [start]):
+            key = frozenset(cycle)
+            if key in reported:
+                continue
+            reported.add(key)
+            wfs = [by_id[i] for i in cycle]
+            names = " -> ".join(w.name for w in wfs) + f" -> {wfs[0].name}"
+            reenters = any(_allows_reentry(w) for w in wfs)
+            if len(wfs) == 1:
+                title = f"'{wfs[0].name}' adds the tag that triggers itself"
+            else:
+                title = "Tag loop: " + " <-> ".join(w.name for w in wfs)
+            yield Finding(
+                rule="GHL014", severity="critical" if reenters else "high",
+                workflow=wfs[0].name, step=names, title=title,
+                symptom="Each workflow in this chain adds a tag that enrolls the "
+                        "next one, and the chain closes back on itself. "
+                        + ("Re-enrollment is ON inside the loop, so one contact "
+                           "cycles through it forever — messages, opportunities and "
+                           "alerts included — until someone notices in the "
+                           "conversation feed."
+                           if reenters else
+                           "Re-enrollment is off, which caps it at one lap today — "
+                           "but the first person to toggle 'allow re-entry' turns "
+                           "this into an infinite messaging loop, and nothing in "
+                           "the builder will warn them."),
+                fix="Break the cycle at its weakest link: remove the add-tag step, "
+                    "narrow the trigger, or have each workflow remove its own "
+                    "trigger tag as its first step so a lap cannot restart.")
+
+
+@rule("GHL015", "Two workflows enroll on the identical trigger", "high", "triggers")
+def duplicate_enrollment(acct: Account):
+    groups: dict[tuple, list[Workflow]] = {}
+    for w in acct.published():
+        if not w.outbound:
+            continue
+        for t in w.triggers:
+            groups.setdefault((t.type.lower(), t.filter_blob()), []).append(w)
+    seen: set[tuple] = set()
+    for (ttype, _blob), wfs in sorted(groups.items()):
+        names = sorted({w.name for w in wfs})
+        if len(names) < 2:
+            continue
+        key = (ttype, tuple(names))
+        if key in seen:
+            continue
+        seen.add(key)
+        yield Finding(
+            rule="GHL015", severity="high", workflow=names[0],
+            step=", ".join(names[1:]),
+            title=f"{len(names)} workflows fire on the same '{ttype}' event "
+                  "with identical filters",
+            symptom="One event enrolls the contact in all of these at once: "
+                    + ", ".join(names) + ". Each one sends its own messages, so "
+                    "the lead hears from two sequences in the same afternoon and "
+                    "reads it as spam. The builder shows each workflow alone — "
+                    "this collision is invisible until a customer complains.",
+            fix="Decide which workflow owns this event and narrow or remove the "
+                "trigger on the others. If both genuinely must run, make one of "
+                "them internal-only (no outbound steps).")
+
+
+# --------------------------------------------------------------------------
+# Message copy that fails quietly
+# --------------------------------------------------------------------------
+
+GREETING_FIELD = re.compile(
+    r"\b(hi|hey|hello|good\s+(?:morning|afternoon|evening))\s*,?\s*"
+    r"\{\{\s*contact\.(first_name|name|full_name|last_name)\s*\}\}", re.I)
+
+
+@rule("GHL016", "Greeting merges a contact field with no fallback", "medium", "copy")
+def bare_greeting_field(acct: Account):
+    for wf in acct.published():
+        for step in wf.outbound:
+            m = GREETING_FIELD.search(step.text())
+            if m:
+                yield _finding(
+                    "GHL016", "medium", wf,
+                    f"Greeting renders as '{m.group(1)} ,' when "
+                    f"{m.group(2)} is empty",
+                    "Imported lists and form fills routinely leave the name field "
+                    "blank, and GoHighLevel renders a missing merge field as empty "
+                    "text — the message still sends, opening with 'Hi ,'. That is "
+                    "the tell of an automated blast, to exactly the lead you were "
+                    "trying to sound personal for.",
+                    "Give the merge field a default value, or write the opener so "
+                    "it survives an empty field ('Hey there' beats 'Hey ,'). Then "
+                    "fix the import so names actually arrive.",
+                    step=step.name or step.type)
+                break  # one finding per workflow is enough to make the point
+
+
+OPT_OUT = re.compile(
+    r"\b(?:reply|text|txt|send)\s+['\"]?stop\b|\bstop\s+to\s+(?:opt|unsub|end)|"
+    r"\bopt[- ]?out\b|\bunsubscribe\b", re.I)
+SMS_TYPES = ("sms", "manual_sms")
+BULK_WORDS = ("reactivat", "database", "blast", "bulk", "list", "dormant", "cold",
+              "winback", "win-back", "nurture")
+
+
+@rule("GHL017", "SMS sequence carries no opt-out language", "high", "compliance")
+def sms_without_opt_out(acct: Account):
+    for wf in acct.published():
+        if any("appointment" in t.type.lower() or "booked" in t.type.lower()
+               for t in wf.triggers):
+            continue  # booking confirmations are a conversation the contact started
+        texts = wf.steps_of(*SMS_TYPES)
+        if not texts:
+            continue
+        bulky = any(k in wf.name.lower() for k in BULK_WORDS)
+        if len(texts) < 2 and not bulky:
+            continue
+        if OPT_OUT.search(wf.text()):
+            continue
+        yield _finding(
+            "GHL017", "high", wf,
+            f"{len(texts)} SMS send{'s' if len(texts) != 1 else ''}, "
+            "no 'reply STOP' anywhere in the sequence",
+            "Carriers run A2P filtering on every message from a registered "
+            "number, and campaigns without opt-out language are exactly what "
+            "gets a number flagged. Nothing errors when that happens — "
+            "deliverability just quietly dies, for every workflow in the "
+            "account, and the client's report says leads 'stopped replying'.",
+            "Put opt-out language ('Reply STOP to opt out') in the first SMS of "
+            "the sequence. It also keeps the campaign consistent with what was "
+            "declared in the A2P registration.",
+            step=texts[0].name or texts[0].type)
+
+
+@rule("GHL018", "Nothing adds the tag this workflow waits for", "low", "triggers", "hygiene")
+def orphan_tag_trigger(acct: Account):
+    added: set[str] = set()
+    for w in acct.workflows:
+        added |= w.tags_added()
+    for wf in acct.published():
+        if not wf.triggers or not all("tag" in t.type.lower() for t in wf.triggers):
+            continue  # another trigger type can still start it
+        tags = wf.trigger_tags()
+        if not tags or tags & added:
+            continue
+        missing = ", ".join(sorted(tags))
+        yield _finding(
+            "GHL018", "low", wf,
+            f"No workflow in this account adds '{missing}'",
+            "This workflow only starts when that tag lands on a contact, and no "
+            "workflow here applies it. If the tag comes from a form, a bulk "
+            "action or a human, all is well — but if another workflow was "
+            "supposed to add it, that step is missing or the tag name is "
+            "misspelled, and this sequence has silently never run. Tag names "
+            "must match exactly.",
+            "Confirm where the tag is meant to come from. If it is another "
+            "workflow, add or correct its add-tag step; if it is manual, note "
+            "that in the workflow name so the next auditor does not ask.")
+
+
 def run(acct: Account, min_severity: str = "low",
         only: Iterable[str] | None = None) -> list[Finding]:
     """Run the catalog. Returns findings sorted most severe first."""

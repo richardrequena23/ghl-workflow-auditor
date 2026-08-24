@@ -287,3 +287,122 @@ class AccountLevelAwareness(unittest.TestCase):
         acct = Account.load([self.sequence, self.handler])
         self.assertIsNotNone(acct.reply_handler())
         self.assertEqual(acct.reply_handler().name, "Reply Handler")
+
+
+def tag_step(*tags):
+    return {"type": "add_contact_tag", "name": "Tag",
+            "meta": {"tags": list(tags)}}
+
+
+def tag_trigger(tag):
+    return {"type": "contact_tag_added", "name": "Tag added",
+            "filters": [{"tag": tag}]}
+
+
+class TagLoopRules(unittest.TestCase):
+    def pair(self, reentry=False):
+        alert = wf("Hot Lead Alert", [tag_step("nurture-me")],
+                   [tag_trigger("hot-lead")])
+        nurture = wf("Long Term Nurture", [sms("One"), tag_step("hot-lead")],
+                     [tag_trigger("nurture-me")],
+                     settings={"allowReentry": True} if reentry else {})
+        return alert, nurture
+
+    def test_two_workflow_loop_is_found(self):
+        findings = [f for f in audit(list(self.pair())) if f.rule == "GHL014"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, "high")
+
+    def test_reentry_inside_the_loop_makes_it_critical(self):
+        findings = [f for f in audit(list(self.pair(reentry=True)))
+                    if f.rule == "GHL014"]
+        self.assertEqual(findings[0].severity, "critical")
+
+    def test_workflow_that_triggers_itself(self):
+        loop = wf("Self feeder", [sms(), tag_step("vip")], [tag_trigger("vip")])
+        self.assertIn("GHL014", rules_hit([loop]))
+
+    def test_tag_chain_that_does_not_close_passes(self):
+        a = wf("A", [tag_step("stage-2")], [tag_trigger("stage-1")])
+        b = wf("B", [sms()], [tag_trigger("stage-2")])
+        self.assertNotIn("GHL014", rules_hit([a, b]))
+
+    def test_draft_workflow_cannot_close_a_loop(self):
+        alert, nurture = self.pair()
+        nurture["status"] = "draft"
+        self.assertNotIn("GHL014", rules_hit([alert, nurture]))
+
+
+class DuplicateEnrollmentRules(unittest.TestCase):
+    def test_identical_triggers_on_two_senders(self):
+        a = wf("Welcome Text", [sms()], [{"type": "contact_created", "filters": []}])
+        b = wf("New Lead Nurture", [sms()],
+               [{"type": "contact_created", "filters": []}])
+        findings = [f for f in audit([a, b]) if f.rule == "GHL015"]
+        self.assertEqual(len(findings), 1)
+
+    def test_different_filters_pass(self):
+        a = wf("FB Leads", [sms()], [tag_trigger("fb")])
+        b = wf("Google Leads", [sms()], [tag_trigger("google")])
+        self.assertNotIn("GHL015", rules_hit([a, b]))
+
+    def test_a_workflow_with_no_outbound_does_not_collide(self):
+        a = wf("Welcome Text", [sms()], [{"type": "contact_created", "filters": []}])
+        b = wf("Bookkeeping", [{"type": "add_contact_tag", "meta": {"tag": "new"}}],
+               [{"type": "contact_created", "filters": []}])
+        self.assertNotIn("GHL015", rules_hit([a, b]))
+
+
+class CopyRules(unittest.TestCase):
+    def test_bare_greeting_field(self):
+        steps = [sms("Welcome", "Hi {{ contact.first_name }}, thanks for reaching out")]
+        self.assertIn("GHL016", rules_hit([wf("Welcome", steps)]))
+
+    def test_greeting_with_a_default_passes(self):
+        steps = [sms("Welcome",
+                     "Hi {{ contact.first_name | default:'there' }}, thanks!")]
+        self.assertNotIn("GHL016", rules_hit([wf("Welcome", steps)]))
+
+    def test_field_used_mid_sentence_is_not_a_greeting(self):
+        steps = [sms("Welcome", "Thanks for booking, {{ contact.first_name }}!")]
+        self.assertNotIn("GHL016", rules_hit([wf("Welcome", steps)]))
+
+
+class ComplianceRules(unittest.TestCase):
+    def test_multi_sms_sequence_without_opt_out(self):
+        steps = [sms("One", "Quick question"), wait(), sms("Two", "Still there?")]
+        self.assertIn("GHL017", rules_hit([wf("Cold Outreach", steps)]))
+
+    def test_opt_out_language_clears_it(self):
+        steps = [sms("One", "Quick question. Reply STOP to opt out."),
+                 wait(), sms("Two", "Still there?")]
+        self.assertNotIn("GHL017", rules_hit([wf("Cold Outreach", steps)]))
+
+    def test_reminder_ladder_is_exempt(self):
+        steps = [sms("24h", "See you tomorrow"), wait(), sms("1h", "Starting soon")]
+        trig = [{"type": "customer_booked_appointment",
+                 "filters": [{"field": "appointment_status", "value": "confirmed"}]}]
+        self.assertNotIn("GHL017", rules_hit([wf("Reminders", steps, trig)]))
+
+    def test_single_sms_bulk_campaign_is_still_flagged(self):
+        steps = [{"type": "drip", "name": "Throttle"}, sms("Blast", "We're back!")]
+        self.assertIn("GHL017", rules_hit([wf("Database Reactivation", steps)]))
+
+    def test_single_conversational_sms_passes(self):
+        self.assertNotIn("GHL017", rules_hit([wf("Quick reply", [sms()])]))
+
+
+class OrphanTagRules(unittest.TestCase):
+    def test_tag_nothing_adds(self):
+        self.assertIn("GHL018",
+                      rules_hit([wf("VIP Onboarding", [sms()], [tag_trigger("vip")])]))
+
+    def test_tag_added_by_another_workflow_passes(self):
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")])
+        b = wf("Close Won", [tag_step("vip")], [{"type": "opportunity_status_changed"}])
+        self.assertNotIn("GHL018", rules_hit([a, b]))
+
+    def test_second_trigger_type_means_it_can_still_fire(self):
+        a = wf("VIP Onboarding", [sms()],
+               [tag_trigger("vip"), {"type": "form_submitted"}])
+        self.assertNotIn("GHL018", rules_hit([a]))

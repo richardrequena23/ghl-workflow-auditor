@@ -36,6 +36,39 @@ OUTBOUND = {"sms", "email", "voicemail", "call", "whatsapp", "gmb_message",
 WAITING = {"wait", "drip", "event_start_wait"}
 
 
+def _tag_strings(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str)]
+    if isinstance(value, dict):
+        return [v for v in value.values() if isinstance(v, str)]
+    return []
+
+
+def collect_tags(node) -> set[str]:
+    """Every string sitting under a tag-ish key, anywhere in the structure.
+
+    Tag names are compared case-insensitively because GHL matches them that way
+    in triggers, even though the UI preserves the case you typed.
+    """
+    out: set[str] = set()
+
+    def walk(n):
+        if isinstance(n, dict):
+            for k, v in n.items():
+                if re.sub(r"[^a-z]", "", str(k).lower()) in ("tag", "tags", "tagname", "tagid"):
+                    out.update(s.strip().lower() for s in _tag_strings(v))
+                else:
+                    walk(v)
+        elif isinstance(n, list):
+            for v in n:
+                walk(v)
+
+    walk(node)
+    return {t for t in out if t}
+
+
 def _first(d: dict, *keys, default=None):
     for k in keys:
         if k in d and d[k] not in (None, ""):
@@ -97,6 +130,13 @@ class Step:
         walk(self.raw)
         return "\n".join(out)
 
+    def tags_added(self) -> set[str]:
+        """Tags this step puts ON a contact. Remove-tag steps return nothing."""
+        t = self.type.lower()
+        if "tag" not in t or "remove" in t or "delete" in t:
+            return set()
+        return collect_tags(self.raw)
+
     def wait_releases_on_reply(self) -> bool:
         """True if this wait ends early when the contact answers.
 
@@ -125,6 +165,15 @@ class Trigger:
 
     def filter_blob(self) -> str:
         return json.dumps(self.filters()).lower()
+
+    def tag_values(self) -> set[str]:
+        """The tag names this trigger listens for, in every export shape seen:
+        {"tag": "x"}, {"tags": [...]}, and {"field": "tag", "value": "x"}."""
+        tags = collect_tags(self.filters())
+        for f in self.filters():
+            if isinstance(f, dict) and "tag" in str(f.get("field", "")).lower():
+                tags.update(s.strip().lower() for s in _tag_strings(f.get("value")))
+        return {t for t in tags if t}
 
 
 @dataclass
@@ -169,6 +218,19 @@ class Workflow:
                         and REPLY_BRANCH.search(nxt.name):
                     return True
         return False
+
+    def tags_added(self) -> set[str]:
+        out: set[str] = set()
+        for s in self.steps:
+            out |= s.tags_added()
+        return out
+
+    def trigger_tags(self) -> set[str]:
+        out: set[str] = set()
+        for t in self.triggers:
+            if "tag" in t.type.lower():
+                out |= t.tag_values()
+        return out
 
     def send_window(self) -> dict | None:
         w = _first(self.settings, "sendingWindow", "sending_window", "window",

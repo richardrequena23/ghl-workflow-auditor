@@ -9,29 +9,73 @@
       "name": "No Show Recovery",
       "status": "published",
       "triggers": [
-        {"type": "appointment", "name": "Appointment Status", "filters": []}
+        {
+          "type": "appointment",
+          "name": "Appointment Status",
+          "filters": []
+        }
       ],
       "steps": [
-        {"type": "sms", "name": "Sorry we missed you",
-         "meta": {"body": "Sorry we missed you today — want to grab another time?"}},
-        {"type": "wait", "name": "Wait 2 days", "meta": {"delay": "2 days"}},
-        {"type": "email", "name": "Second attempt",
-         "meta": {"body": "Still happy to find you a slot."}},
-        {"type": "create_opportunity", "name": "Create opportunity"}
+        {
+          "type": "sms",
+          "name": "Sorry we missed you",
+          "meta": {
+            "body": "Sorry we missed you today \u2014 want to grab another time?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "email",
+          "name": "Second attempt",
+          "meta": {
+            "body": "Still happy to find you a slot."
+          }
+        },
+        {
+          "type": "create_opportunity",
+          "name": "Create opportunity"
+        }
       ],
-      "settings": {"allowReentry": true}
+      "settings": {
+        "allowReentry": true
+      }
     },
     {
       "_id": "wf_missedcall",
       "name": "Missed Call Text Back",
       "status": "published",
-      "triggers": [{"type": "call_status", "name": "Call Status", "filters": []}],
+      "triggers": [
+        {
+          "type": "call_status",
+          "name": "Call Status",
+          "filters": []
+        }
+      ],
       "steps": [
-        {"type": "sms", "name": "Text back immediately",
-         "meta": {"body": "Sorry we missed your call! How can we help?"}},
-        {"type": "wait", "name": "Wait 4 hours"},
-        {"type": "email", "name": "Follow up by email",
-         "meta": {"body": "Following up on your call."}}
+        {
+          "type": "sms",
+          "name": "Text back immediately",
+          "meta": {
+            "body": "Sorry we missed your call! How can we help?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 4 hours"
+        },
+        {
+          "type": "email",
+          "name": "Follow up by email",
+          "meta": {
+            "body": "Following up on your call."
+          }
+        }
       ]
     },
     {
@@ -39,52 +83,158 @@
       "name": "Strategy Call - Booking & Reminders",
       "status": "published",
       "triggers": [
-        {"type": "customer_booked_appointment", "name": "Booked",
-         "filters": [{"field": "appointment_status", "value": "confirmed"}]}
+        {
+          "type": "customer_booked_appointment",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
       ],
       "steps": [
-        {"type": "sms", "name": "Confirmation", "meta": {"body": "You're booked."}},
-        {"type": "wait", "name": "Until 24 hours before"},
-        {"type": "sms", "name": "24 hour reminder",
-         "meta": {"body": "Reminder — your call is tomorrow."}},
-        {"type": "wait", "name": "Until 1 hour before"},
-        {"type": "sms", "name": "1 hour reminder",
-         "meta": {"body": "Your call starts in 1 hour."}}
+        {
+          "type": "sms",
+          "name": "Confirmation",
+          "meta": {
+            "body": "You're booked."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Until 24 hours before"
+        },
+        {
+          "type": "sms",
+          "name": "24 hour reminder",
+          "meta": {
+            "body": "Reminder \u2014 your call is tomorrow."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Until 1 hour before"
+        },
+        {
+          "type": "sms",
+          "name": "1 hour reminder",
+          "meta": {
+            "body": "Your call starts in 1 hour."
+          }
+        }
       ],
-      "settings": {"sendingWindow": {"start": "09:00", "end": "20:00"}}
+      "settings": {
+        "sendingWindow": {
+          "start": "09:00",
+          "end": "20:00"
+        }
+      }
     },
     {
       "_id": "wf_reactivation",
       "name": "Database Reactivation - Cold List",
       "status": "published",
-      "triggers": [{"type": "contact_tag_added", "name": "Tag: reactivate",
-                    "filters": [{"tag": "reactivate"}]}],
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag: reactivate",
+          "filters": [
+            {
+              "tag": "reactivate"
+            }
+          ]
+        }
+      ],
       "steps": [
-        {"type": "email", "name": "Is this still live?",
-         "meta": {"body": "Quick one — is this still something you're working on?"}},
-        {"type": "wait", "name": "Wait 3 days"},
-        {"type": "sms", "name": "Nudge", "meta": {"body": "Just checking back."}},
-        {"type": "webhook", "name": "Push to reporting",
-         "meta": {"url": "https://hooks.example.com/inbound/reporting"}}
+        {
+          "type": "email",
+          "name": "Is this still live?",
+          "meta": {
+            "body": "Quick one \u2014 is this still something you're working on?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 3 days"
+        },
+        {
+          "type": "sms",
+          "name": "Nudge",
+          "meta": {
+            "body": "Just checking back."
+          }
+        },
+        {
+          "type": "webhook",
+          "name": "Push to reporting",
+          "meta": {
+            "url": "https://hooks.example.com/inbound/reporting"
+          }
+        }
       ]
     },
     {
       "_id": "wf_review",
       "name": "Review Request After Close",
       "status": "published",
-      "triggers": [{"type": "contact_tag_added", "name": "Tag: job-complete",
-                    "filters": [{"tag": "job-complete"}]}],
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag: job-complete",
+          "filters": [
+            {
+              "tag": "job-complete"
+            }
+          ]
+        }
+      ],
       "steps": [
-        {"type": "if_else", "name": "Had a complaint or refund - skip",
-         "meta": {"conditions": [{"tag": "complaint"}, {"tag": "refund"}]}},
-        {"type": "wait", "name": "Wait 7 days"},
-        {"type": "email", "name": "Ask for the review",
-         "meta": {"body": "How did we do? {{ custom_values.review_link }}"}},
-        {"type": "internal_notification", "name": "Alert the team"},
-        {"type": "wait", "name": "Wait 3 days"},
-        {"type": "sms", "name": "Nudge with the link",
-         "meta": {"body": "Here's the link: {{ custom_values.review_link }}"}},
-        {"type": "internal_notification", "name": "Alert the team"}
+        {
+          "type": "if_else",
+          "name": "Had a complaint or refund - skip",
+          "meta": {
+            "conditions": [
+              {
+                "tag": "complaint"
+              },
+              {
+                "tag": "refund"
+              }
+            ]
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 7 days"
+        },
+        {
+          "type": "email",
+          "name": "Ask for the review",
+          "meta": {
+            "body": "How did we do? {{ custom_values.review_link }}"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Alert the team"
+        },
+        {
+          "type": "wait",
+          "name": "Wait 3 days"
+        },
+        {
+          "type": "sms",
+          "name": "Nudge with the link",
+          "meta": {
+            "body": "Here's the link: {{ custom_values.review_link }}"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Alert the team"
+        }
       ]
     },
     {
@@ -92,8 +242,146 @@
       "name": "ZZ SANDBOX - branch probe (do not use)",
       "status": "published",
       "triggers": [],
-      "steps": [{"type": "sms", "name": "test",
-                 "meta": {"body": "TODO write the real copy"}}]
+      "steps": [
+        {
+          "type": "sms",
+          "name": "test",
+          "meta": {
+            "body": "TODO write the real copy"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_hot_alert",
+      "name": "Hot Lead Alert",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged hot-lead",
+          "filters": [
+            {
+              "tag": "hot-lead"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Ping the closer",
+          "meta": {
+            "body": "Hot lead: {{ contact.name }}"
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Queue long-term nurture",
+          "meta": {
+            "tags": [
+              "nurture-me"
+            ]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_nurture",
+      "name": "Long Term Nurture",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged nurture-me",
+          "filters": [
+            {
+              "tag": "nurture-me"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Check-in 1",
+          "meta": {
+            "body": "Been a while - still thinking about it?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 30 days",
+          "meta": {
+            "delay": "30 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Check-in 2",
+          "meta": {
+            "body": "Doors close Friday, want back in?"
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Re-flag as hot",
+          "meta": {
+            "tags": [
+              "hot-lead"
+            ]
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
+      }
+    },
+    {
+      "_id": "wf_welcome_sms",
+      "name": "Welcome Text - New Lead",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Welcome text",
+          "meta": {
+            "body": "Hi {{ contact.first_name }}, thanks for reaching out - what's the best time for a quick call?"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_welcome_email",
+      "name": "Welcome Email - New Lead",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Welcome email",
+          "meta": {
+            "subject": "Welcome!",
+            "body": "Great to have you - here is what happens next."
+          }
+        }
+      ],
+      "settings": {}
     }
   ]
 }
