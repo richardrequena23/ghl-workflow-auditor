@@ -13,11 +13,21 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-MERGE_FIELD = re.compile(r"\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}")
-CUSTOM_VALUE = re.compile(r"\{\{\s*custom_values\.([a-zA-Z0-9_]+)\s*\}\}")
-PLACEHOLDER = re.compile(r"REPLACE[-_ ]?WITH|YOUR[-_ ]?[A-Z]+[-_ ]?HERE|TODO|XXXX", re.I)
+from .config import AuditConfig
+
+MERGE_FIELD = re.compile(r"\{\{\s*([a-zA-Z0-9_.]+)")
+CUSTOM_VALUE = re.compile(r"\{\{\s*custom_values\.([a-zA-Z0-9_]+)")
+PLACEHOLDER = re.compile(
+    r"REPLACE[-_ ]?WITH|YOUR[-_ ]?[A-Z]+[-_ ]?HERE|TODO|XXXX|"
+    r"\[[A-Z][A-Z0-9 _/'-]{3,}\]|<<[^>]{2,}>>|LOREM IPSUM", re.I)
 # "Replied" / "No reply" branch labels off a wait step — the UI's way of listening.
 REPLY_BRANCH = re.compile(r"^\s*(replied|reply|responded|answered)\b", re.I)
+URL = re.compile(r"https?://[^\s\"'<>)\]]+", re.I)
+
+# A Liquid-style fallback: {{ contact.first_name | default: "there" }}. HighLevel
+# documents fallback values as supported in "email templates, workflow emails,
+# campaign emails, and bulk emails" — SMS is not on that list.
+FALLBACK_FILTER = re.compile(r"\{\{[^}]*\|\s*(default|fallback)\s*:", re.I)
 
 
 def slug(name: str) -> str:
@@ -34,6 +44,66 @@ OUTBOUND = {"sms", "email", "voicemail", "call", "whatsapp", "gmb_message",
 
 # Step types that pause the run. Only some of them can be released by a reply.
 WAITING = {"wait", "drip", "event_start_wait"}
+
+# Step types that put a message in front of a human, split by channel, because
+# the channels do not behave the same. SMS has no merge-field fallback and is
+# carrier-filtered; email has an unsubscribe obligation SMS does not.
+SMS_TYPES = ("sms", "manual_sms", "mms")
+EMAIL_TYPES = ("email", "manual_email", "send_email")
+
+BRANCHING = ("if_else", "condition", "branch", "conditional", "ifelse", "split")
+
+# A wait that ends on an EVENT rather than after a duration. If one of these has
+# no timeout, a contact who never produces the event is parked in the workflow
+# permanently — never messaged again, and never shown as an error anywhere.
+CONDITIONAL_WAIT = re.compile(
+    r"contact[_ -]?repl|customer[_ -]?repl|user[_ -]?repl|contact[_ -]?action|"
+    r"specific[_ -]?condition|wait[_ -]?for[_ -]?condition|condition[_ -]?met|"
+    r"goal[_ -]?event|email[_ -]?event|until[_ -]?condition", re.I)
+TIMEOUT_KEY = re.compile(
+    r"^(time_?out|max_?wait|maximum_?wait|wait_?limit|wait_?max|expire|expiry|"
+    r"max_?duration|timeout_?after)", re.I)
+
+# Where an ID reference to another account object hides. Keys are normalised to
+# letters only before lookup, so calendarId / calendar_id / CalendarID all land
+# in the same bucket.
+ENTITY_KEYS = {
+    "calendar": ("calendarid", "calendarids"),
+    "user": ("userid", "userids", "assigneduserid", "assignedto", "assigneduser",
+             "users", "teammembers", "recipientuserid"),
+    "pipeline": ("pipelineid", "pipelineids"),
+    "stage": ("stageid", "pipelinestageid", "stageids"),
+    "form": ("formid", "formids"),
+    "survey": ("surveyid", "surveyids"),
+    "template": ("templateid", "emailtemplateid", "smstemplateid"),
+    "workflow": ("workflowid", "workflowids", "targetworkflowid"),
+}
+_ENTITY_LOOKUP = {k: kind for kind, keys in ENTITY_KEYS.items() for k in keys}
+
+# Steps that decide WHO handles the contact. A round robin with nobody in it
+# assigns nobody, and HighLevel documents that a notification with no recipient
+# is skipped silently.
+ASSIGNMENT = re.compile(r"assign|round[_ -]?robin|rotate|distribut", re.I)
+USER_POOL_KEYS = ("users", "userids", "teammembers", "members", "assignees",
+                  "roundrobinusers")
+
+# Standard contact fields that exist in every GoHighLevel location. Anything
+# outside this set has to be a custom field, so it can be checked against the
+# account's custom-field list. Deliberately generous: a name missing from here
+# produces a false positive, and a false positive is the expensive mistake.
+STANDARD_CONTACT_FIELDS = {
+    "id", "contact_id", "first_name", "last_name", "name", "full_name",
+    "full_name_lower_case", "email", "phone", "phone_raw", "company_name",
+    "address1", "address", "full_address", "city", "state", "postal_code",
+    "country", "timezone", "date_of_birth", "birthday", "source", "type",
+    "assigned_to", "assigned_user", "owner", "tags", "website", "dnd",
+    "date_created", "date_updated", "attribution_source", "attributions",
+    "unsubscribe", "unsubscribe_link", "profile_photo", "business_name",
+}
+
+
+def _norm_key(key) -> str:
+    return re.sub(r"[^a-z]", "", str(key).lower())
 
 
 def _tag_strings(value) -> list[str]:
@@ -152,6 +222,199 @@ class Step:
             "inbound_message", "responsereceived", "response_received",
         ))
 
+    # -- wiring ---------------------------------------------------------
+    @property
+    def step_id(self) -> str:
+        return str(_first(self.raw, "id", "_id", "stepId", "nodeId", default=""))
+
+    @property
+    def parent_key(self) -> str:
+        """The node this one hangs off in the advanced builder.
+
+        GoHighLevel writes it as `<parentId>-<branchName>` on a branch child, so
+        it is a prefix match against a step id, never an equality test.
+        """
+        return str(_first(self.raw, "parentKey", "parent_key", "parentId",
+                          "parent", default="") or "")
+
+    def next_ids(self) -> list:
+        nxt = _first(self.raw, "next", "nextStep", "nextStepId", "next_steps",
+                     default=None)
+        if isinstance(nxt, str):
+            return [nxt]
+        if isinstance(nxt, list):
+            return [str(n) for n in nxt if isinstance(n, str)]
+        return []
+
+    # -- waits ----------------------------------------------------------
+    def wait_is_conditional(self) -> bool:
+        """True when this wait resumes on an EVENT, not after a duration.
+
+        Duration waits always end. Event waits end only if the event happens,
+        which is why the timeout on them is the difference between a follow-up
+        and a lead nobody ever contacts again.
+        """
+        if not self.is_wait:
+            return False
+        cfg = self.config()
+        declared = _first(cfg, "waitType", "wait_type", "type", "mode",
+                          "resumeOn", "resume_on", default="")
+        if declared and CONDITIONAL_WAIT.search(str(declared)):
+            return True
+        return bool(CONDITIONAL_WAIT.search(json.dumps(cfg)))
+
+    def wait_timeout(self):
+        """The wait's maximum duration, whatever this export calls it.
+
+        Returns None when nothing timeout-shaped is set. A zero or an explicit
+        'none' counts as absent — those are how the UI writes 'no maximum'.
+        """
+        found = [None]
+
+        def walk(node):
+            if found[0] is not None:
+                return
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    if TIMEOUT_KEY.match(_norm_key(k)) or TIMEOUT_KEY.match(str(k)):
+                        if v not in (None, "", 0, "0", False, "none", "None",
+                                     "never", [], {}):
+                            found[0] = v
+                            return
+                    walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v)
+
+        walk(self.config())
+        return found[0]
+
+    # -- branching ------------------------------------------------------
+    def branches(self) -> list:
+        """[(branch label, [child actions])] for an if/else style step.
+
+        Only the shapes that actually carry their children inline are readable
+        here. An export that flattens branch children into the workflow's step
+        list with a parentKey is handled by the wiring check instead.
+        """
+        cfg = self.config()
+        out = []
+        for key in ("branches", "paths", "outcomes", "cases", "children"):
+            raw = cfg.get(key) if isinstance(cfg, dict) else None
+            if raw is None and isinstance(self.raw, dict):
+                raw = self.raw.get(key)
+            if isinstance(raw, list):
+                for entry in raw:
+                    if not isinstance(entry, dict):
+                        continue
+                    label = str(_first(entry, "name", "label", "title", "branch",
+                                       default="(unnamed branch)"))
+                    kids = _first(entry, "actions", "steps", "children", "nodes",
+                                  default=None)
+                    out.append((label, kids if isinstance(kids, list) else []))
+                if out:
+                    return out
+        # An explicit else/none key, which is how the simplest exports write it.
+        for key in ("else", "elseBranch", "else_branch", "none", "noneBranch",
+                    "otherwise", "default"):
+            for holder in (cfg if isinstance(cfg, dict) else {}, self.raw):
+                if isinstance(holder, dict) and key in holder:
+                    kids = holder[key]
+                    out.append((key, kids if isinstance(kids, list) else
+                                ([] if kids in (None, {}, "") else [kids])))
+                    return out
+        return out
+
+    # -- references -----------------------------------------------------
+    def entity_refs(self) -> list:
+        """[(kind, id)] for every account object this step points at.
+
+        Merge-field tokens are skipped — `{{ custom_values.calendar_id }}` is
+        resolved at send time and cannot be checked against a list of IDs.
+        """
+        out = []
+
+        def add(kind, value):
+            if isinstance(value, str):
+                v = value.strip()
+                if v and "{{" not in v:
+                    out.append((kind, v))
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        add(kind, item)
+                    elif isinstance(item, dict):
+                        add(kind, _first(item, "id", "_id", "userId", default=""))
+
+        def walk(node):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    kind = _ENTITY_LOOKUP.get(_norm_key(k))
+                    if kind:
+                        add(kind, v)
+                    else:
+                        walk(v)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v)
+
+        walk(self.raw)
+        return out
+
+    def user_pool(self):
+        """The list of users this assignment step rotates through.
+
+        None means the step does not declare one (a default pool, a calendar's
+        own round robin). An empty list means it declares one and it is empty —
+        which assigns the lead to nobody, silently.
+        """
+        if not ASSIGNMENT.search(self.type + " " + self.name):
+            return None
+        cfg = self.config()
+        for holder in (cfg if isinstance(cfg, dict) else {}, self.raw):
+            if not isinstance(holder, dict):
+                continue
+            for k, v in holder.items():
+                if _norm_key(k) in USER_POOL_KEYS and isinstance(v, list):
+                    return v
+        return None
+
+    def bodies(self) -> str:
+        """Message text only — no step names, no ids, no settings.
+
+        Scanning the whole step for a merge field finds them in fields the
+        contact never sees, which is how a check like this starts lying.
+        """
+        out: list[str] = []
+
+        def walk(node, key=""):
+            if isinstance(node, str):
+                if _norm_key(key) in ("body", "message", "text", "subject",
+                                      "html", "content", "smsbody", "emailbody",
+                                      "value", "note", "footer"):
+                    out.append(node)
+            elif isinstance(node, dict):
+                for k, v in node.items():
+                    walk(v, k)
+            elif isinstance(node, list):
+                for v in node:
+                    walk(v, key)
+
+        walk(self.raw)
+        return "\n".join(out)
+
+    @property
+    def is_sms(self) -> bool:
+        return self.type in SMS_TYPES
+
+    @property
+    def is_email(self) -> bool:
+        return self.type in EMAIL_TYPES
+
+    @property
+    def is_branch(self) -> bool:
+        return _norm_key(self.type) in {_norm_key(b) for b in BRANCHING}
+
 
 @dataclass
 class Trigger:
@@ -174,6 +437,70 @@ class Trigger:
             if isinstance(f, dict) and "tag" in str(f.get("field", "")).lower():
                 tags.update(s.strip().lower() for s in _tag_strings(f.get("value")))
         return {t for t in tags if t}
+
+    # -- comparing one trigger against another --------------------------
+    def canonical_type(self) -> str:
+        """The trigger's type reduced to something comparable across exports.
+
+        `contact_tag_added`, `contactTagAdded` and `ContactTagAdded` are one
+        trigger written three ways. Comparing the raw strings reports two
+        workflows racing on the same event as two unrelated triggers, which is
+        exactly the collision this is supposed to find.
+        """
+        t = _norm_key(self.type)
+        for needle, canon in (
+                ("tagadded", "tag_added"), ("addedtag", "tag_added"),
+                ("tagremoved", "tag_removed"), ("removedtag", "tag_removed"),
+                ("contactcreated", "contact_created"),
+                ("newcontact", "contact_created"),
+                ("formsubmit", "form_submitted"),
+                ("surveysubmit", "survey_submitted"),
+                ("inboundmessage", "inbound_message"),
+                ("customerreplied", "inbound_message"),
+                ("messagereceived", "inbound_message"),
+                ("appointmentstatus", "appointment_status"),
+                ("customerbookedappointment", "appointment_booked"),
+                ("bookedappointment", "appointment_booked"),
+                ("appointmentbooked", "appointment_booked"),
+                ("callstatus", "call_status"),
+                ("opportunitystatus", "opportunity_status"),
+                ("opportunitystagechanged", "opportunity_stage"),
+                ("orderformsubmit", "order_form_submitted"),
+                ("ordersubmit", "order_submitted"),
+        ):
+            if needle in t:
+                return canon
+        return t or "unknown"
+
+    def canonical_filters(self) -> tuple:
+        """The filter set, order- and spelling-insensitive.
+
+        Two triggers filtered on the same tag are the same trigger whether the
+        export wrote `{"tag": "vip"}` or `{"field": "tag", "value": "vip"}`.
+        """
+        out = set()
+        for f in self.filters():
+            if isinstance(f, dict):
+                pairs = []
+                for k, v in sorted(f.items()):
+                    nk = _norm_key(k)
+                    if nk in ("field", "key", "property", "name", "attribute"):
+                        nk = "field"
+                    elif nk in ("value", "values", "val", "operatorvalue"):
+                        nk = "value"
+                    elif nk in ("tag", "tags"):
+                        pairs.append(("field", "tag"))
+                        nk = "value"
+                    if isinstance(v, (list, tuple, set)):
+                        v = "|".join(sorted(str(x).strip().lower() for x in v))
+                    pairs.append((nk, str(v).strip().lower()))
+                out.add(tuple(sorted(set(pairs))))
+            else:
+                out.add((("value", str(f).strip().lower()),))
+        return tuple(sorted(out))
+
+    def signature(self) -> tuple:
+        return (self.canonical_type(), self.canonical_filters())
 
 
 @dataclass
@@ -240,8 +567,60 @@ class Workflow:
     def text(self) -> str:
         return "\n".join(s.text() for s in self.steps)
 
+    def bodies(self) -> str:
+        """Only what a contact could actually read."""
+        return "\n".join(s.bodies() for s in self.steps)
+
     def custom_values_used(self) -> set[str]:
         return set(CUSTOM_VALUE.findall(self.text()))
+
+    # -- shape ----------------------------------------------------------
+    @property
+    def sms_steps(self) -> list[Step]:
+        return [s for s in self.steps if s.is_sms]
+
+    @property
+    def email_steps(self) -> list[Step]:
+        return [s for s in self.steps if s.is_email]
+
+    def trigger_signatures(self) -> list:
+        return [t.signature() for t in self.triggers]
+
+    def outbound_after(self, index: int) -> list[Step]:
+        """Sends that sit below a given step — the size of the leak below it."""
+        return [s for s in self.steps[index + 1:] if s.is_outbound]
+
+    def step_ids(self) -> set:
+        return {s.step_id for s in self.steps if s.step_id}
+
+    @property
+    def has_wiring(self) -> bool:
+        """Does this export carry node ids and links at all?
+
+        Flat exports list steps in order and carry no ids. There is nothing
+        wrong with them — but a wiring check has nothing to read, and reporting
+        'no broken links' on a file that contains no links would be a lie.
+        """
+        if not self.step_ids():
+            return False
+        return any(s.next_ids() or s.parent_key for s in self.steps)
+
+    def shape(self) -> tuple:
+        """A structural fingerprint: what this workflow does, ignoring names.
+
+        Two workflows with the same trigger set and the same ordered action
+        types are the same workflow twice — which is what a snapshot re-pushed
+        onto a non-blank sub-account leaves behind.
+        """
+        return (tuple(sorted(self.trigger_signatures())),
+                tuple(_norm_key(s.type) for s in self.steps))
+
+    def exits(self) -> list[Step]:
+        """Steps that pull the contact out of this workflow before the end."""
+        return [s for s in self.steps
+                if "removefromworkflow" in _norm_key(s.type)
+                or "removeworkflow" in _norm_key(s.type)
+                or "goalevent" in _norm_key(s.type)]
 
 
 def parse_step(raw: Any) -> Step:
@@ -282,17 +661,277 @@ def parse_workflow(raw: dict) -> Workflow:
     )
 
 
+def _id_map(raw, name_keys=("name", "title", "label")) -> dict:
+    """{id: name} from either a list of objects or an {id: name} dict."""
+    out: dict = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            out[str(k)] = str(v) if not isinstance(v, dict) else \
+                str(_first(v, *name_keys, default=k))
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                ident = _first(item, "id", "_id", "key", default=None)
+                if ident is not None:
+                    out[str(ident)] = str(_first(item, *name_keys, default=""))
+            elif isinstance(item, str):
+                out[item] = item
+    return out
+
+
+@dataclass
+class Inventory:
+    """What else exists in the location, if the caller could tell us.
+
+    None of this can be inferred from a workflow export — a deleted calendar and
+    a calendar that was never in this file look identical. So each bucket
+    records whether it was actually SUPPLIED, and a rule that needs a bucket it
+    did not get reports itself as skipped rather than passing quietly.
+    """
+
+    calendars: dict = field(default_factory=dict)
+    users: dict = field(default_factory=dict)          # id -> {"name", "active"}
+    pipelines: dict = field(default_factory=dict)
+    stages: dict = field(default_factory=dict)         # id -> {"name", "pipeline"}
+    forms: dict = field(default_factory=dict)
+    surveys: dict = field(default_factory=dict)
+    templates: dict = field(default_factory=dict)
+    custom_fields: dict = field(default_factory=dict)  # slug -> display name
+    tags: set = field(default_factory=set)
+    phone_numbers: list = field(default_factory=list)  # [{"number", "sms"}]
+    email_domains: list = field(default_factory=list)  # [{"domain", "verified"}]
+    email_settings: dict = field(default_factory=dict)
+    stats: dict = field(default_factory=dict)          # workflow key -> enrollments
+    provided: set = field(default_factory=set)
+
+    def has(self, *buckets: str) -> bool:
+        return all(b in self.provided for b in buckets)
+
+    def missing(self, *buckets: str) -> list:
+        return [b for b in buckets if b not in self.provided]
+
+    def known(self, kind: str) -> dict:
+        return {"calendar": self.calendars, "user": self.users,
+                "pipeline": self.pipelines, "stage": self.stages,
+                "form": self.forms, "survey": self.surveys,
+                "template": self.templates}.get(kind, {})
+
+    def enrollments(self, workflow: "Workflow"):
+        """Enrollment count for a workflow, keyed by id or by name."""
+        for key in (workflow.id, workflow.name):
+            if not key:
+                continue
+            if key in self.stats:
+                return self.stats[key]
+            for k, v in self.stats.items():
+                if str(k).strip().lower() == str(key).strip().lower():
+                    return v
+        return None
+
+    @property
+    def sms_capable_numbers(self) -> list:
+        return [n for n in self.phone_numbers if n.get("sms")]
+
+    @property
+    def verified_email_domains(self) -> list:
+        return [d for d in self.email_domains if d.get("verified")]
+
+    @classmethod
+    def load(cls, data) -> "Inventory":
+        inv = cls()
+        if not isinstance(data, dict):
+            return inv
+
+        def pick(*keys):
+            """The first of these keys carrying a parseable collection.
+
+            A bucket counts as SUPPLIED only when its value is a list or a dict
+            — the shapes this can actually read. `"users": "dana"` is a typo,
+            and treating it as an empty-but-supplied user list would make every
+            userId in the account look like a reference to a deleted user. An
+            explicitly empty list is different: that is the account genuinely
+            telling us it has none, and it is allowed to mean that.
+            """
+            for k in keys:
+                if k in data and isinstance(data[k], (list, dict)):
+                    return k, data[k]
+            return None, None
+
+        key, raw = pick("calendars", "calendar")
+        if key:
+            inv.calendars = _id_map(raw)
+            inv.provided.add("calendars")
+
+        key, raw = pick("users", "staff", "teamMembers")
+        if key:
+            if isinstance(raw, list):
+                for item in raw:
+                    if isinstance(item, dict):
+                        ident = _first(item, "id", "_id", "userId", default=None)
+                        if ident is None:
+                            continue
+                        active = item.get("active", item.get("isActive", True))
+                        inv.users[str(ident)] = {
+                            "name": str(_first(item, "name", "firstName", "email",
+                                               default="")),
+                            "active": bool(active)}
+                    elif isinstance(item, str):
+                        inv.users[item] = {"name": item, "active": True}
+            elif isinstance(raw, dict):
+                for k, v in raw.items():
+                    inv.users[str(k)] = {"name": str(v), "active": True} \
+                        if not isinstance(v, dict) else {
+                            "name": str(_first(v, "name", default=k)),
+                            "active": bool(v.get("active", True))}
+            inv.provided.add("users")
+
+        key, raw = pick("pipelines", "pipeline")
+        if key:
+            if isinstance(raw, list):
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    pid = str(_first(item, "id", "_id", default=""))
+                    if not pid:
+                        continue
+                    inv.pipelines[pid] = str(_first(item, "name", default=""))
+                    for st in _as_list(item.get("stages")):
+                        if isinstance(st, dict):
+                            sid = str(_first(st, "id", "_id", default=""))
+                            if sid:
+                                inv.stages[sid] = {
+                                    "name": str(_first(st, "name", default="")),
+                                    "pipeline": pid}
+            else:
+                inv.pipelines = _id_map(raw)
+            inv.provided.add("pipelines")
+            inv.provided.add("stages")
+
+        for bucket, keys in (("forms", ("forms", "form")),
+                             ("surveys", ("surveys", "survey"))):
+            key, raw = pick(*keys)
+            if key:
+                setattr(inv, bucket, _id_map(raw))
+                inv.provided.add(bucket)
+
+        templates: dict = {}
+        got_templates = False
+        for keys in (("emailTemplates", "email_templates"),
+                     ("smsTemplates", "sms_templates"),
+                     ("templates",)):
+            key, raw = pick(*keys)
+            if key:
+                templates.update(_id_map(raw))
+                got_templates = True
+        if got_templates:
+            inv.templates = templates
+            inv.provided.add("templates")
+
+        key, raw = pick("customFields", "custom_fields")
+        if key:
+            entries = raw if isinstance(raw, list) else \
+                [{"key": k, "name": v} for k, v in (raw or {}).items()]
+            for item in entries:
+                if isinstance(item, dict):
+                    ident = _first(item, "fieldKey", "key", "name", "id", default="")
+                    display = str(_first(item, "name", "fieldKey", "key", default=""))
+                    for form in (str(ident), str(ident).split(".")[-1]):
+                        if form:
+                            inv.custom_fields[slug(form)] = display
+                elif isinstance(item, str):
+                    inv.custom_fields[slug(item)] = item
+                    inv.custom_fields[slug(item.split(".")[-1])] = item
+            inv.provided.add("custom_fields")
+
+        key, raw = pick("tags", "tagList")
+        if key:
+            inv.tags = {str(t).strip().lower() for t in _str_values(raw)}
+            inv.provided.add("tags")
+
+        key, raw = pick("phoneNumbers", "phone_numbers", "numbers",
+                        "activeNumbers")
+        if key:
+            for item in _as_list(raw):
+                if isinstance(item, dict):
+                    caps = item.get("capabilities") or {}
+                    sms = caps.get("sms") if isinstance(caps, dict) else None
+                    if sms is None:
+                        sms = item.get("sms", item.get("smsCapable", True))
+                    inv.phone_numbers.append({
+                        "number": str(_first(item, "phoneNumber", "number",
+                                             default="")),
+                        "sms": bool(sms)})
+                elif isinstance(item, str):
+                    inv.phone_numbers.append({"number": item, "sms": True})
+            inv.provided.add("phone_numbers")
+
+        key, raw = pick("emailDomains", "email_domains", "sendingDomains")
+        if key:
+            for item in _as_list(raw):
+                if isinstance(item, dict):
+                    verified = item.get("verified", item.get("isVerified",
+                                                             item.get("valid")))
+                    inv.email_domains.append({
+                        "domain": str(_first(item, "domain", "name",
+                                             default="")).lower(),
+                        "verified": bool(verified)})
+                elif isinstance(item, str):
+                    inv.email_domains.append({"domain": item.lower(),
+                                              "verified": True})
+            inv.provided.add("email_domains")
+
+        key, raw = pick("emailSettings", "email_settings")
+        if key and isinstance(raw, dict):
+            inv.email_settings = raw
+            inv.provided.add("email_settings")
+
+        key, raw = pick("stats", "workflowStats", "workflow_stats")
+        if key and isinstance(raw, dict):
+            for k, v in raw.items():
+                if isinstance(v, dict):
+                    count = _first(v, "enrollments", "enrolled", "contacts",
+                                   "entries", default=None)
+                else:
+                    count = v
+                try:
+                    inv.stats[str(k)] = int(count)
+                except (TypeError, ValueError):
+                    continue
+            inv.provided.add("stats")
+
+        return inv
+
+
+def _str_values(raw) -> list:
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        out = []
+        for item in raw:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, dict):
+                out.append(str(_first(item, "name", "tag", "label", default="")))
+        return [o for o in out if o]
+    if isinstance(raw, dict):
+        return [str(v) for v in raw.values()]
+    return []
+
+
 @dataclass
 class Account:
     """One GoHighLevel location's workflows, plus whatever context we were given."""
 
     workflows: list[Workflow] = field(default_factory=list)
     custom_values: dict[str, str] = field(default_factory=dict)
+    inventory: Inventory = field(default_factory=Inventory)
+    config: AuditConfig = field(default_factory=AuditConfig)
 
     @classmethod
-    def load(cls, data: Any) -> "Account":
+    def load(cls, data: Any, config: AuditConfig = None) -> "Account":
         """Accept a list of workflows, a single workflow, or a bundle dict."""
         custom_values: dict[str, str] = {}
+        inventory = Inventory()
         if isinstance(data, dict):
             raw_cvs = _first(data, "customValues", "custom_values", default={}) or {}
             if isinstance(raw_cvs, list):
@@ -302,18 +941,29 @@ class Account:
                         custom_values[str(key)] = str(_first(cv, "value", default=""))
             elif isinstance(raw_cvs, dict):
                 custom_values = {str(k): str(v) for k, v in raw_cvs.items()}
+            inventory = Inventory.load(data)
+            # A bundle may carry its own config block, so one file can hold
+            # everything about one account. An explicit --config still wins:
+            # policy the auditor decided beats policy the export shipped with.
+            if config is None and isinstance(data.get("config"), dict):
+                config = AuditConfig.from_dict(data["config"])
             workflows = _as_list(_first(data, "workflows", "steps_by_workflow",
                                         default=None) or data)
         else:
             workflows = _as_list(data)
 
         parsed = [parse_workflow(w) for w in workflows if isinstance(w, dict)]
-        return cls(workflows=parsed, custom_values=custom_values)
+        return cls(workflows=parsed, custom_values=custom_values,
+                   inventory=inventory, config=config or AuditConfig())
 
     @classmethod
-    def from_file(cls, path: str) -> "Account":
+    def from_file(cls, path: str, config: AuditConfig = None) -> "Account":
         with open(path) as fh:
-            return cls.load(json.load(fh))
+            return cls.load(json.load(fh), config=config)
+
+    def custom_value_slugs(self) -> dict:
+        """{slug: (display name, value)} — the form merge fields actually use."""
+        return {slug(k): (k, v) for k, v in self.custom_values.items()}
 
     def published(self) -> Iterable[Workflow]:
         return (w for w in self.workflows if w.published)

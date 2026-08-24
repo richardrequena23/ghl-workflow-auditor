@@ -1,7 +1,8 @@
 {
   "customValues": {
     "review_link": "REPLACE-WITH-CLIENT-GOOGLE-ID",
-    "office_phone": "(555) 010-9900"
+    "office_phone": "(555) 010-9900",
+    "booking_link": ""
   },
   "workflows": [
     {
@@ -20,7 +21,7 @@
           "type": "sms",
           "name": "Sorry we missed you",
           "meta": {
-            "body": "Sorry we missed you today \u2014 want to grab another time?"
+            "body": "Sorry we missed you today — want to grab another time?"
           }
         },
         {
@@ -110,7 +111,7 @@
           "type": "sms",
           "name": "24 hour reminder",
           "meta": {
-            "body": "Reminder \u2014 your call is tomorrow."
+            "body": "Reminder — your call is tomorrow."
           }
         },
         {
@@ -152,7 +153,7 @@
           "type": "email",
           "name": "Is this still live?",
           "meta": {
-            "body": "Quick one \u2014 is this still something you're working on?"
+            "body": "Quick one — is this still something you're working on?"
           }
         },
         {
@@ -321,7 +322,7 @@
           "type": "sms",
           "name": "Check-in 2",
           "meta": {
-            "body": "Doors close Friday, want back in?"
+            "body": "Doors close Friday {{ contact.first_name | default: 'there' }}, want back in?"
           }
         },
         {
@@ -354,7 +355,7 @@
           "type": "sms",
           "name": "Welcome text",
           "meta": {
-            "body": "Hi {{ contact.first_name }}, thanks for reaching out - what's the best time for a quick call?"
+            "body": "Hi {{ contact.first_name }}, thanks for reaching out about {{ contact.servcie_interest }} - grab a time here: {{ custom_values.booking_link }}"
           }
         }
       ],
@@ -382,6 +383,334 @@
         }
       ],
       "settings": {}
+    },
+    {
+      "_id": "wf_speed",
+      "name": "Speed to Lead - 5 Minute Response",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Intake form",
+          "filters": [
+            {
+              "field": "formId",
+              "value": "form_intake"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Instant reply",
+          "id": "s1",
+          "next": "s2",
+          "meta": {
+            "body": "Thanks for reaching out! When's a good time to talk? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait for their reply",
+          "id": "s2",
+          "next": "s3",
+          "meta": {
+            "waitType": "contact_reply",
+            "delay": "unlimited"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Second touch",
+          "id": "s3",
+          "next": "s4",
+          "meta": {
+            "body": "Still keen? Happy to find a slot."
+          }
+        },
+        {
+          "type": "email",
+          "name": "Last touch",
+          "id": "s4",
+          "next": "s9missing",
+          "meta": {
+            "subject": "One more try",
+            "body": "Closing your file unless I hear back."
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Detached follow-up",
+          "id": "s7",
+          "parentKey": "s6-deleted",
+          "meta": {
+            "body": "Orphaned when the branch above was removed."
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
+      }
+    },
+    {
+      "_id": "wf_intake",
+      "name": "Lead Intake - Qualify & Route",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged intake",
+          "filters": [
+            {
+              "tag": "intake"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "if_else",
+          "name": "Qualified?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.service_interest",
+                "operator": "exists"
+              }
+            ],
+            "branches": [
+              {
+                "name": "Qualified",
+                "actions": [
+                  {
+                    "type": "add_contact_tag",
+                    "meta": {
+                      "tags": [
+                        "qualified"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "None",
+                "actions": []
+              }
+            ]
+          }
+        },
+        {
+          "type": "assign_round_robin",
+          "name": "Route to a rep",
+          "meta": {
+            "users": []
+          }
+        },
+        {
+          "type": "book_appointment",
+          "name": "Offer the strategy call",
+          "meta": {
+            "calendarId": "cal_deleted_2024"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Tell the owner",
+          "meta": {
+            "userId": "usr_left",
+            "body": "New qualified lead."
+          }
+        },
+        {
+          "type": "email",
+          "name": "What happens next",
+          "meta": {
+            "subject": "Next steps",
+            "body": "Here is what happens next. Book: {{ custom_values.booking_link }}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_rebook",
+      "name": "Cancelled - One Rebook Ask",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Cancelled",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "cancelled"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Sorry to miss you",
+          "meta": {
+            "body": "No problem - want to grab another time? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "email",
+          "name": "One more option",
+          "meta": {
+            "subject": "Another time?",
+            "body": "Here are a few more slots this week."
+          }
+        }
+      ],
+      "settings": {}
     }
-  ]
+  ],
+  "customFields": [
+    {
+      "fieldKey": "contact.service_interest",
+      "name": "Service Interest"
+    },
+    {
+      "fieldKey": "contact.lead_source_detail",
+      "name": "Lead Source Detail"
+    }
+  ],
+  "calendars": [
+    {
+      "id": "cal_strategy",
+      "name": "Strategy Call"
+    }
+  ],
+  "users": [
+    {
+      "id": "usr_owner",
+      "name": "Dana Reyes",
+      "active": true
+    },
+    {
+      "id": "usr_left",
+      "name": "Sam Whitlock",
+      "active": false
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "pipe_sales",
+      "name": "Sales",
+      "stages": [
+        {
+          "id": "stg_new",
+          "name": "New Lead"
+        },
+        {
+          "id": "stg_booked",
+          "name": "Call Booked"
+        }
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "id": "form_intake",
+      "name": "Intake"
+    }
+  ],
+  "emailTemplates": [
+    {
+      "id": "tpl_welcome",
+      "name": "Welcome"
+    }
+  ],
+  "emailDomains": [
+    {
+      "domain": "mail.example-client.com",
+      "verified": false
+    }
+  ],
+  "emailSettings": {
+    "default_unsubscribe": false
+  },
+  "tags": [
+    "hot-lead",
+    "nurture-me",
+    "reactivate",
+    "job-complete",
+    "vip"
+  ],
+  "stats": {
+    "wf_noshow": {
+      "enrollments": 412
+    },
+    "wf_missedcall": {
+      "enrollments": 88
+    },
+    "wf_reminders": {
+      "enrollments": 640
+    },
+    "wf_reactivation": {
+      "enrollments": 1204
+    },
+    "wf_review": {
+      "enrollments": 96
+    },
+    "wf_sandbox": {
+      "enrollments": 0
+    },
+    "wf_hot_alert": {
+      "enrollments": 51
+    },
+    "wf_nurture": {
+      "enrollments": 51
+    },
+    "wf_welcome_sms": {
+      "enrollments": 900
+    },
+    "wf_welcome_email": {
+      "enrollments": 900
+    },
+    "wf_intake": {
+      "enrollments": 0
+    },
+    "wf_speed": {
+      "enrollments": 233
+    },
+    "wf_rebook": {
+      "enrollments": 17
+    }
+  },
+  "config": {
+    "owned_domains": [
+      "example-client.com"
+    ],
+    "stats_window_days": 90,
+    "reentry_policy": {
+      "Speed to Lead - 5 Minute Response": false,
+      "No Show Recovery": true
+    },
+    "send_window_policy": {
+      "Long Term Nurture": {
+        "start": "09:00",
+        "end": "20:00",
+        "timezone": "contact"
+      },
+      "Speed to Lead - 5 Minute Response": null
+    },
+    "required_steps": {
+      "Lead Intake - Qualify & Route": [
+        "Push to reporting - lead attributed"
+      ]
+    },
+    "transactional_workflows": []
+  }
 }
