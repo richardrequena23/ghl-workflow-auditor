@@ -494,6 +494,44 @@ class UnboundedWaitRules(unittest.TestCase):
                  sms("Two")]
         self.assertIn("GHL019", rules_hit([wf("Gate", steps)]))
 
+    def test_ghls_hybrid_reply_wait_with_startafter_is_bounded(self):
+        """The builder's own shape: max in startAfter, timeout as a transition.
+
+        Calling a three-day reply wait with an explicit timeout branch
+        "unbounded" was this auditor's first false positive on a real account.
+        """
+        steps = [sms("One"),
+                 {"type": "wait", "name": "Wait 3 days for a reply",
+                  "attributes": {
+                      "type": "reply",
+                      "startAfter": {"type": "days", "value": 3,
+                                     "when": "after"},
+                      "transitions": [
+                          {"name": "wait", "condition": "primary",
+                           "attributes": {"type": "wait_reply",
+                                          "description":
+                                              "When contact replies"}},
+                          {"name": "timeout", "condition": "timeout"}]}},
+                 sms("Two")]
+        self.assertNotIn("GHL019", rules_hit([wf("Reactivation", steps)]))
+
+    def test_a_bare_reply_wait_with_no_maximum_is_still_flagged(self):
+        steps = [sms("One"),
+                 {"type": "wait", "name": "Wait for a reply",
+                  "attributes": {"type": "reply", "transitions": []}},
+                 sms("Two")]
+        found = findings_for("GHL019", [wf("Speed to Lead", steps)])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "critical")
+
+    def test_a_zero_startafter_is_not_a_maximum(self):
+        steps = [sms("One"),
+                 {"type": "wait", "name": "Wait for a reply",
+                  "attributes": {"type": "reply",
+                                 "startAfter": {"type": "days", "value": 0}}},
+                 sms("Two")]
+        self.assertIn("GHL019", rules_hit([wf("Speed to Lead", steps)]))
+
 
 INVENTORY = {
     "calendars": [{"id": "cal_live", "name": "Strategy Call"}],
@@ -585,6 +623,26 @@ class EmptyBranchRules(unittest.TestCase):
         steps = [{"type": "if_else", "name": "Route", "meta": {"else": []}},
                  sms("After")]
         self.assertIn("GHL021", rules_hit([wf("Intake", steps)]))
+
+    def test_externally_wired_branches_are_not_called_empty(self):
+        """GHL's builder shape: branch objects carry only conditions, and
+        their ids reappear in the step's `next` links — the children hang off
+        parentKey in the flat step list. Calling those branches empty produced
+        one false "silent exit" per populated branch on a real account."""
+        steps = [
+            {"type": "if_else", "name": "Segment", "id": "seg",
+             "next": ["b1", "b2"],
+             "attributes": {"branches": [
+                 {"id": "b1", "name": "Quoted",
+                  "segments": [{"conditions": []}]},
+                 {"id": "b2", "name": "Recent",
+                  "segments": [{"conditions": []}]}]}},
+            {"type": "sms", "name": "Quoted path", "id": "s1",
+             "parentKey": "seg-Quoted", "meta": {"body": "hi, reply STOP to opt out"}},
+            {"type": "sms", "name": "Recent path", "id": "s2",
+             "parentKey": "seg-Recent", "meta": {"body": "hi, reply STOP to opt out"}},
+        ]
+        self.assertNotIn("GHL021", rules_hit([wf("Reactivation", steps)]))
 
 
 def node(step_type, name, sid, nxt=None, parent=None, **meta):

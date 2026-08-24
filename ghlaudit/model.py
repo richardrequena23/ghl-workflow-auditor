@@ -260,6 +260,12 @@ class Step:
         cfg = self.config()
         declared = _first(cfg, "waitType", "wait_type", "type", "mode",
                           "resumeOn", "resume_on", default="")
+        # GoHighLevel's hybrid wait declares itself with a bare word: a wait
+        # whose `type` is "reply" resumes when the contact replies. "time" is
+        # the duration wait and stays out of this.
+        if str(declared).strip().lower() in ("reply", "event", "condition",
+                                             "goal"):
+            return True
         if declared and CONDITIONAL_WAIT.search(str(declared)):
             return True
         return bool(CONDITIONAL_WAIT.search(json.dumps(cfg)))
@@ -269,7 +275,25 @@ class Step:
 
         Returns None when nothing timeout-shaped is set. A zero or an explicit
         'none' counts as absent — those are how the UI writes 'no maximum'.
+
+        GoHighLevel's hybrid reply/event wait does not use a timeout-named key
+        at all: the maximum lives in `startAfter` ({"type": "days", "value": 3})
+        and the escape path is a `transitions` entry whose condition is
+        "timeout"/"wait_timeout". Both are read here — calling a three-day
+        reply wait with an explicit timeout branch "unbounded" was this
+        auditor's own first false positive on a real account.
         """
+        cfg = self.config()
+        sa = _first(cfg, "startAfter", "start_after", default=None)
+        if isinstance(sa, dict):
+            v = sa.get("value")
+            if v not in (None, "", 0, "0", False):
+                return v
+        for tr in (cfg.get("transitions") or []):
+            if isinstance(tr, dict) and "timeout" in str(
+                    _first(tr, "condition", "name", "type", default="")).lower():
+                return "timeout branch"
+
         found = [None]
 
         def walk(node):
@@ -287,7 +311,7 @@ class Step:
                 for v in node:
                     walk(v)
 
-        walk(self.config())
+        walk(cfg)
         return found[0]
 
     # -- branching ------------------------------------------------------
@@ -300,14 +324,27 @@ class Step:
         """
         cfg = self.config()
         out = []
+        wired = set(self.next_ids())
         for key in ("branches", "paths", "outcomes", "cases", "children"):
             raw = cfg.get(key) if isinstance(cfg, dict) else None
             if raw is None and isinstance(self.raw, dict):
                 raw = self.raw.get(key)
             if isinstance(raw, list):
-                for entry in raw:
-                    if not isinstance(entry, dict):
-                        continue
+                entries = [e for e in raw if isinstance(e, dict)]
+                # GoHighLevel's builder wires branch children through the flat
+                # step list: the branch objects here carry only the CONDITIONS,
+                # and their ids reappear in the step's own `next` links.
+                # Emptiness is not knowable from these entries, and calling
+                # every such branch empty produced one false "silent exit" per
+                # populated branch on a real account. The wiring check owns
+                # this shape.
+                if wired and any(
+                        _first(e, "actions", "steps", "children", "nodes",
+                               default=None) is None
+                        and str(e.get("id") or "") in wired
+                        for e in entries):
+                    return []
+                for entry in entries:
                     label = str(_first(entry, "name", "label", "title", "branch",
                                        default="(unnamed branch)"))
                     kids = _first(entry, "actions", "steps", "children", "nodes",
