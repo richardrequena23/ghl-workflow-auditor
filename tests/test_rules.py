@@ -907,6 +907,325 @@ class DuplicateWorkflowRules(unittest.TestCase):
         self.assertEqual(found[0].severity, "high")
 
 
+class AppointmentExitRules(unittest.TestCase):
+    """GHL028 — a reminder ladder with no way out when the appointment dies."""
+
+    LADDER = [sms("Confirm", "You're booked."), wait("Until 24h before"),
+              sms("24h reminder", "See you tomorrow.")]
+    APPT = [{"type": "appointment_status", "name": "Booked",
+             "filters": [{"field": "appointment_status", "value": "confirmed"}]}]
+    CANCELLED = [{"type": "appointment_status", "name": "Cancelled",
+                  "filters": [{"field": "appointment_status",
+                               "value": "cancelled"}]}]
+
+    def test_a_ladder_with_no_cancel_handling_is_critical(self):
+        hits = findings_for("GHL028", [wf("Reminders", self.LADDER, self.APPT)])
+        self.assertEqual([f.severity for f in hits], ["critical"])
+
+    def test_a_remove_step_inside_the_workflow_clears_it(self):
+        steps = self.LADDER + [{"type": "remove_from_workflow", "name": "Done"}]
+        self.assertNotIn("GHL028",
+                         rules_hit([wf("Reminders", steps, self.APPT)]))
+
+    def test_an_account_wide_cancel_guard_downgrades_to_low(self):
+        guard = wf("Cancelled - Cleanup",
+                   [{"type": "remove_from_workflow", "name": "Pull out"}],
+                   self.CANCELLED)
+        hits = findings_for("GHL028",
+                            [wf("Reminders", self.LADDER, self.APPT), guard])
+        self.assertEqual([f.severity for f in hits], ["low"])
+
+    def test_the_cancel_triggered_workflow_itself_is_not_flagged(self):
+        rebook = wf("Rebook Ask", [sms("A"), wait(), sms("B")], self.CANCELLED)
+        self.assertNotIn("GHL028", rules_hit([rebook]))
+
+    def test_a_single_confirmation_is_not_a_ladder(self):
+        one = wf("Confirmation", [sms("Confirm", "You're booked.")], self.APPT)
+        self.assertNotIn("GHL028", rules_hit([one]))
+
+    def test_a_status_gate_counts_as_an_exit(self):
+        steps = [sms("Confirm"), wait(),
+                 {"type": "if_else", "name": "Still booked?",
+                  "meta": {"conditions": [{"field": "appointment_status",
+                                           "value": "cancelled"}]}},
+                 sms("Reminder")]
+        self.assertNotIn("GHL028",
+                         rules_hit([wf("Reminders", steps, self.APPT)]))
+
+
+class SendWindowCoverageRules(unittest.TestCase):
+    """GHL029 — delayed sends with nothing keeping them out of the night."""
+
+    TAG = [{"type": "contact_tag_added", "name": "Tagged",
+            "filters": [{"tag": "nurture"}]}]
+
+    def test_a_delayed_sms_with_no_window_is_flagged(self):
+        hits = rules_hit([wf("Nurture", [wait(), sms("Day 3")], self.TAG)])
+        self.assertIn("GHL029", hits)
+
+    def test_an_instant_reply_is_not_flagged(self):
+        hits = rules_hit([wf("Speed to lead",
+                             [sms("Instant"), wait(), email("Day 2")],
+                             self.TAG)])
+        self.assertNotIn("GHL029", hits)
+
+    def test_a_send_window_clears_it(self):
+        w = wf("Nurture", [wait(), sms("Day 3")], self.TAG,
+               settings={"sendingWindow": {"start": "09:00", "end": "20:00"},
+                         "timezone": "contact"})
+        self.assertNotIn("GHL029", rules_hit([w]))
+
+    def test_a_documented_window_policy_defers_to_the_drift_check(self):
+        cfg = AuditConfig.from_dict({"send_window_policy": {
+            "Nurture": {"start": "09:00", "end": "20:00"}}})
+        hits = rules_hit([wf("Nurture", [wait(), sms("Day 3")], self.TAG)],
+                         config=cfg)
+        self.assertNotIn("GHL029", hits)
+        self.assertIn("GHL013", hits)  # the wiped-window check reports it instead
+
+    def test_appointment_ladders_are_left_to_the_reminder_rules(self):
+        appt = [{"type": "appointment_status", "name": "Booked",
+                 "filters": [{"field": "appointment_status",
+                              "value": "confirmed"}]}]
+        hits = rules_hit([wf("Reminders", [wait(), sms("Reminder")], appt)])
+        self.assertNotIn("GHL029", hits)
+
+
+class ReentrySettingRules(unittest.TestCase):
+    """GHL030 — the toggle HighLevel documents it ignores."""
+
+    APPT = [{"type": "appointment_status", "name": "Booked",
+             "filters": [{"field": "appointment_status", "value": "confirmed"}]}]
+
+    def test_reentry_off_on_an_appointment_trigger_is_flagged(self):
+        w = wf("Confirmations", [sms()], self.APPT,
+               settings={"allowReentry": False})
+        self.assertIn("GHL030", rules_hit([w]))
+
+    def test_reentry_on_is_fine(self):
+        w = wf("Confirmations", [sms()], self.APPT,
+               settings={"allowReentry": True})
+        self.assertNotIn("GHL030", rules_hit([w]))
+
+    def test_a_mixed_trigger_set_is_governed_by_the_toggle(self):
+        trig = self.APPT + [{"type": "contact_tag_added",
+                             "filters": [{"tag": "vip"}]}]
+        w = wf("Confirmations", [sms()], trig,
+               settings={"allowReentry": False})
+        self.assertNotIn("GHL030", rules_hit([w]))
+
+    def test_a_tag_trigger_is_not_flagged(self):
+        trig = [{"type": "contact_tag_added", "filters": [{"tag": "vip"}]}]
+        w = wf("Nurture", [sms()], trig, settings={"allowReentry": False})
+        self.assertNotIn("GHL030", rules_hit([w]))
+
+    def test_an_invoice_trigger_counts_too(self):
+        trig = [{"type": "invoice_paid", "name": "Paid",
+                 "filters": [{"field": "status", "value": "paid"}]}]
+        w = wf("Receipts", [email()], trig, settings={"allowReentry": False})
+        self.assertIn("GHL030", rules_hit([w]))
+
+
+class SmsNumberRules(unittest.TestCase):
+    """GHL031 — SMS steps with nothing behind them to send from."""
+
+    def test_no_number_list_reports_a_skip(self):
+        self.assertIn("GHL031", skips_hit([wf("Welcome", [sms()])]))
+
+    def test_an_email_only_account_needs_no_number(self):
+        findings, skips = audit_all([wf("Welcome", [email()])])
+        self.assertNotIn("GHL031", {s.rule for s in skips})
+        self.assertNotIn("GHL031", {f.rule for f in findings})
+
+    def test_no_sms_capable_number_is_account_critical(self):
+        hits = findings_for(
+            "GHL031", [wf("Welcome", [sms()])],
+            phoneNumbers=[{"number": "+15550001111", "sms": False}])
+        self.assertEqual([f.severity for f in hits], ["critical"])
+        self.assertEqual(hits[0].workflow, "(account)")
+
+    def test_a_capable_number_passes(self):
+        hits = findings_for(
+            "GHL031", [wf("Welcome", [sms()])],
+            phoneNumbers=[{"number": "+15550001111", "sms": True}])
+        self.assertEqual(hits, [])
+
+    def test_a_from_number_outside_the_location_is_flagged(self):
+        step = {"type": "sms", "name": "Welcome",
+                "meta": {"fromNumber": "+15559998888", "body": "hi"}}
+        hits = findings_for(
+            "GHL031", [wf("Welcome", [step])],
+            phoneNumbers=[{"number": "+15550001111", "sms": True}])
+        self.assertEqual([f.severity for f in hits], ["high"])
+
+    def test_country_code_formatting_does_not_false_positive(self):
+        step = {"type": "sms", "name": "Welcome",
+                "meta": {"fromNumber": "(555) 000-1111", "body": "hi"}}
+        hits = findings_for(
+            "GHL031", [wf("Welcome", [step])],
+            phoneNumbers=[{"number": "+15550001111", "sms": True}])
+        self.assertEqual(hits, [])
+
+    def test_a_merge_field_from_number_is_not_guessed_about(self):
+        step = {"type": "sms", "name": "Welcome",
+                "meta": {"fromNumber": "{{ custom_values.sms_number }}",
+                         "body": "hi"}}
+        hits = findings_for(
+            "GHL031", [wf("Welcome", [step])],
+            phoneNumbers=[{"number": "+15550001111", "sms": True}])
+        self.assertEqual(hits, [])
+
+
+class OpportunityStageRules(unittest.TestCase):
+    """GHL032 — a pipeline chosen, a stage left to the default."""
+
+    def test_a_pipeline_with_no_stage_is_flagged(self):
+        step = {"type": "create_opportunity", "name": "Create opp",
+                "meta": {"pipelineId": "pipe_x"}}
+        self.assertIn("GHL032", rules_hit([wf("Booked", [step])]))
+
+    def test_the_finding_names_the_stage_it_lands_in(self):
+        step = {"type": "create_opportunity", "name": "Create opp",
+                "meta": {"pipelineId": "pipe_x"}}
+        hits = findings_for(
+            "GHL032", [wf("Booked", [step])],
+            pipelines=[{"id": "pipe_x", "name": "Sales",
+                        "stages": [{"id": "s1", "name": "New Lead"},
+                                   {"id": "s2", "name": "Booked"}]}])
+        self.assertEqual(len(hits), 1)
+        self.assertIn("New Lead", hits[0].title)
+
+    def test_an_explicit_stage_passes(self):
+        step = {"type": "create_opportunity", "name": "Create opp",
+                "meta": {"pipelineId": "pipe_x", "stageId": "s2"}}
+        self.assertNotIn("GHL032", rules_hit([wf("Booked", [step])]))
+
+    def test_no_pipeline_at_all_is_not_this_rules_business(self):
+        step = {"type": "create_opportunity", "name": "Create opp"}
+        self.assertNotIn("GHL032", rules_hit([wf("Booked", [step])]))
+
+
+class OrderTriggerRules(unittest.TestCase):
+    """GHL033 — a thank-you on the trigger that fires before payment."""
+
+    ORDER_FORM = [{"type": "order_form_submitted", "name": "Order form",
+                   "filters": []}]
+
+    def test_confirmation_copy_on_the_submission_trigger(self):
+        w = wf("Purchase Confirmation",
+               [email("Thanks",
+                      "Thanks for your purchase - your order is confirmed.")],
+               self.ORDER_FORM)
+        self.assertIn("GHL033", rules_hit([w]))
+
+    def test_the_post_payment_trigger_passes(self):
+        w = wf("Purchase Confirmation",
+               [email("Thanks",
+                      "Thanks for your purchase - your order is confirmed.")],
+               [{"type": "order_submitted", "name": "Order", "filters": []}])
+        self.assertNotIn("GHL033", rules_hit([w]))
+
+    def test_neutral_checkout_copy_passes(self):
+        w = wf("Abandoned Checkout",
+               [email("Hold on",
+                      "We saved your details - finish checkout any time.")],
+               self.ORDER_FORM)
+        self.assertNotIn("GHL033", rules_hit([w]))
+
+
+class ShortenerRules(unittest.TestCase):
+    """GHL034 — a shared shortener domain inside a text message."""
+
+    def test_a_bitly_link_in_an_sms_is_flagged(self):
+        w = wf("Nurture", [sms("Nudge", "Book here: https://bit.ly/3xR2mQ "
+                                        "Reply STOP to opt out.")])
+        self.assertIn("GHL034", rules_hit([w]))
+
+    def test_a_full_domain_passes(self):
+        w = wf("Nurture", [sms("Nudge", "Book here: "
+                                        "https://book.example-client.com/call "
+                                        "Reply STOP to opt out.")])
+        self.assertNotIn("GHL034", rules_hit([w]))
+
+    def test_a_shortener_in_an_email_is_not_an_sms_problem(self):
+        w = wf("Nurture", [email("Nudge", "Book here: https://bit.ly/3xR2mQ")])
+        self.assertNotIn("GHL034", rules_hit([w]))
+
+
+class WebhookEndpointRules(unittest.TestCase):
+    """GHL035 — webhooks still pointing at the tool used to debug them."""
+
+    def _hook(self, url):
+        return {"type": "webhook", "name": "Push", "meta": {"url": url}}
+
+    def test_webhook_site_is_flagged_high(self):
+        hits = findings_for(
+            "GHL035", [wf("Sync", [self._hook("https://webhook.site/abc123")])])
+        self.assertEqual([f.severity for f in hits], ["high"])
+
+    def test_an_ngrok_tunnel_is_flagged(self):
+        self.assertIn("GHL035", rules_hit(
+            [wf("Sync", [self._hook("https://f00d.ngrok-free.app/hook")])]))
+
+    def test_plain_http_is_flagged_medium(self):
+        hits = findings_for(
+            "GHL035",
+            [wf("Sync", [self._hook("http://api.example-client.com/hook")])])
+        self.assertEqual([f.severity for f in hits], ["medium"])
+
+    def test_a_production_https_endpoint_passes(self):
+        self.assertNotIn("GHL035", rules_hit(
+            [wf("Sync", [self._hook("https://api.example-client.com/hook")])]))
+
+
+class DeprecatedTriggerRules(unittest.TestCase):
+    """GHL036 — the booking trigger that skips manual bookings."""
+
+    def test_customer_booked_appointment_is_flagged(self):
+        trig = [{"type": "customer_booked_appointment", "name": "Booked",
+                 "filters": [{"field": "appointment_status",
+                              "value": "confirmed"}]}]
+        self.assertIn("GHL036", rules_hit([wf("Reminders", [sms()], trig)]))
+
+    def test_appointment_status_is_the_supported_shape(self):
+        trig = [{"type": "appointment_status", "name": "Booked",
+                 "filters": [{"field": "appointment_status",
+                              "value": "confirmed"}]}]
+        self.assertNotIn("GHL036", rules_hit([wf("Reminders", [sms()], trig)]))
+
+
+class DraftRules(unittest.TestCase):
+    """GHL037 — finished builds that were never switched on."""
+
+    TRIG = [{"type": "contact_tag_added", "name": "Tagged",
+             "filters": [{"tag": "referral-ready"}]}]
+
+    def test_a_finished_draft_with_sends_is_flagged(self):
+        w = wf("Referral Ask", [sms(), wait(), sms()], self.TRIG,
+               status="draft")
+        hits = findings_for("GHL037", [w])
+        self.assertEqual([f.severity for f in hits], ["medium"])
+
+    def test_published_workflows_are_not_drafts(self):
+        w = wf("Referral Ask", [sms(), wait(), sms()], self.TRIG)
+        self.assertNotIn("GHL037", rules_hit([w]))
+
+    def test_a_draft_named_as_wip_is_deliberate(self):
+        w = wf("WIP - Referral Ask", [sms()], self.TRIG, status="draft")
+        self.assertNotIn("GHL037", rules_hit([w]))
+
+    def test_a_draft_with_no_trigger_cannot_fire_anyway(self):
+        w = wf("Referral Ask", [sms()], (), status="draft")
+        self.assertNotIn("GHL037", rules_hit([w]))
+
+    def test_a_draft_with_no_sends_is_low(self):
+        w = wf("Tag Bookkeeping",
+               [{"type": "add_contact_tag", "meta": {"tags": ["x"]}}],
+               self.TRIG, status="draft")
+        hits = findings_for("GHL037", [w])
+        self.assertEqual([f.severity for f in hits], ["low"])
+
+
 # ==========================================================================
 # Scoring and reporting
 # ==========================================================================

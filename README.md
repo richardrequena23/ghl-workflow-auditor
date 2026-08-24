@@ -8,28 +8,28 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-27-19D3B0)
+![rules](https://img.shields.io/badge/rules-37-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
-Account health: 16/100  (F)   Customers are receiving the wrong messages right now.
+Account health: 15/100  (F)   Customers are receiving the wrong messages right now.
 
-13 workflows audited. 51 findings: 5 critical, 29 high, 10 medium, 7 low  [27 of 27 checks ran]
+15 workflows audited. 64 findings: 7 critical, 34 high, 16 medium, 7 low  [37 of 37 checks ran]
 
-  Compliance        51/100  [############............]  9 findings
-  Deliverability    86/100  [#####################...]  2 findings
-  Routing           27/100  [######..................]  21 findings
-  Hygiene           46/100  [###########.............]  13 findings
-  Dead weight       85/100  [####################....]  6 findings
+  Compliance        50/100  [############............]  11 findings
+  Deliverability    78/100  [###################.....]  4 findings
+  Routing           25/100  [######..................]  27 findings
+  Hygiene           47/100  [###########.............]  15 findings
+  Dead weight       84/100  [####################....]  7 findings
 
 Fix in this order — ranked by what each one costs:
   1. [GHL019] Wait for an event with no timeout — 3 messages below it never send
-  2. [GHL001] Appointment trigger fires on every status change
-  3. [GHL002] Call trigger is not narrowed to missed calls
-  4. [GHL014] Tag loop: Hot Lead Alert <-> Long Term Nurture
-  5. [GHL020] 1 step points at a calendar that no longer exists
+  2. [GHL028] 3 reminders keep sending after a cancel or reschedule
+  3. [GHL001] Appointment trigger fires on every status change
+  4. [GHL002] Call trigger is not narrowed to missed calls
+  5. [GHL014] Tag loop: Hot Lead Alert <-> Long Term Nurture
 ```
 
 That is the real output of `python -m ghlaudit examples/broken-account.json` against
@@ -136,7 +136,7 @@ itself as skipped — never as a pass.**
 | `customFields` | GHL023 merge fields referencing a field the account does not have |
 | `calendars`, `users`, `pipelines`, `forms`, `surveys`, `emailTemplates` | GHL020 dangling references, deactivated users |
 | `emailDomains`, `emailSettings` | GHL025 unauthenticated sending domain, unsubscribe defaults |
-| `phoneNumbers` | SMS-capability context |
+| `phoneNumbers` | GHL031 SMS steps with no SMS-capable number, hard-coded from-numbers the location does not own |
 | `stats` | GHL026 workflows nothing has enrolled in |
 | `config` | the policy checks below (or pass them with `--config`) |
 
@@ -149,6 +149,7 @@ itself as skipped — never as a pass.**
   "users": [{"id": "usr_1", "name": "Dana", "active": true}],
   "emailDomains": [{"domain": "mail.acme.com", "verified": true}],
   "emailSettings": {"default_unsubscribe": true},
+  "phoneNumbers": [{"number": "+15550109900", "sms": true}],
   "stats": {"wf_intake": {"enrollments": 0}}
 }
 ```
@@ -187,6 +188,8 @@ Workflow names match case- and whitespace-insensitively.
 | GHL014 | critical | routing | Workflows re-triggering each other through tags — an enrollment loop |
 | GHL019 | critical | routing | Wait that resumes on an event with no timeout — contacts park forever |
 | GHL020 | critical | hygiene | A step pointing at a calendar, user, pipeline or template that no longer exists |
+| GHL028 | critical | routing | Appointment reminders that keep firing after a cancel or reschedule |
+| GHL031 | critical | deliverability | SMS steps with no SMS-capable number behind them — sends fail silently |
 | GHL003 | high | routing | Multi-touch sequence with nothing listening for a reply |
 | GHL004 | high | routing | Quiet hours on a reminder ladder — the window *holds* the message |
 | GHL008 | high | hygiene | Placeholder custom value, or a merge field with no field behind it |
@@ -197,6 +200,9 @@ Workflow names match case- and whitespace-insensitively.
 | GHL023 | high | hygiene | A merge field that renders blank: empty custom value, or a field the account lacks |
 | GHL025 | high | compliance | Marketing email with no unsubscribe; unauthenticated sending domain |
 | GHL027 | high | routing | A step the build manifest requires is missing from the workflow |
+| GHL029 | high | compliance | SMS after a wait, with no send window anywhere — the 3am text |
+| GHL032 | high | routing | Opportunity created with a pipeline chosen and no stage — files as a brand-new lead |
+| GHL035 | high | hygiene | Webhook aimed at webhook.site, ngrok or localhost — or posting over plain http |
 | GHL005 | medium | deliverability | Reactivation blast with no throttle |
 | GHL006 | medium | hygiene | Webhook posting to a hardcoded URL instead of a custom value |
 | GHL009 | medium | routing | Reply alerts with no once-per-conversation guard |
@@ -204,6 +210,11 @@ Workflow names match case- and whitespace-insensitively.
 | GHL011 | medium | routing | Re-enrollment creating duplicate opportunities, or drifting from policy |
 | GHL016 | medium | hygiene | Greeting that renders as "Hi ," when the name field is empty |
 | GHL024 | medium | hygiene | A `\| default:` fallback written into an SMS, where fallbacks do not apply |
+| GHL030 | medium | routing | Re-entry OFF on an appointment/invoice trigger — the setting HighLevel documents it ignores |
+| GHL033 | medium | routing | "Thanks for your purchase" on the pre-payment trigger — declined cards get thanked |
+| GHL034 | medium | deliverability | Public link shortener in an SMS — a named driver of carrier filtering |
+| GHL036 | medium | routing | Deprecated "Customer Booked Appointment" trigger — manual bookings never enter |
+| GHL037 | medium | dead_weight | A finished build sitting in draft — saved is not published |
 | GHL007 | low | hygiene | Deprecated `create_opportunity` / `update_opportunity` |
 | GHL012 | low | hygiene | Sandbox or test workflow left published |
 | GHL013 | low | compliance | Send window in account time, not the contact's — or wiped from the workflow |
@@ -218,8 +229,10 @@ maintenance or future-proofing is not.
 Several rules escalate or downgrade themselves in context: GHL019 drops to `low` when
 nothing sits below the wait, GHL021 drops to `low` when the branch is a terminal filter,
 GHL015 escalates to `critical` when the two workflows are structurally identical (a
-snapshot re-pushed onto a non-blank account), and GHL025 raises its severity only when
-it can confirm the account-level unsubscribe default is actually off.
+snapshot re-pushed onto a non-blank account), GHL025 raises its severity only when
+it can confirm the account-level unsubscribe default is actually off, and GHL028 drops
+to a `low` confirm-this reminder when a dedicated cancellation workflow already cleans
+up account-wide — the finding then asks whether this sequence is on its remove list.
 
 ## The health score
 
@@ -257,7 +270,7 @@ it.
 
 ## It reads the account, not just the workflow
 
-Most of these checks would produce nonsense one workflow at a time. Four examples of why
+Most of these checks would produce nonsense one workflow at a time. Five examples of why
 the whole account is parsed first:
 
 **GHL014 builds the tag graph nobody can see.** Workflow A adds a tag that triggers
@@ -286,12 +299,19 @@ once at the top and then waits seven days before asking is not protected. The ru
 each send that has a wait between it and the last suppression check, which is how it
 catches the *second* ask in a two-ask sequence while leaving the first one alone.
 
+**GHL028 looks for the cancellation lane before flagging the reminders.** The correct
+build often puts the exit in a *different* workflow — one Cancelled-status listener that
+removes contacts from every reminder sequence. Judged alone, every reminder ladder in
+such an account looks broken. So the auditor first looks for that cleanup workflow;
+found, the finding drops to a `low` "confirm this sequence is on its remove list", which
+is the thing people actually forget when they add a calendar later.
+
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **162 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **206 tests**
 in [`tests/test_rules.py`](tests/test_rules.py), run against Python 3.9–3.13 on every
-push. The shipped example account trips **all 27 rules**, and a test enforces that, so a
+push. The shipped example account trips **all 37 rules**, and a test enforces that, so a
 rule cannot rot into never firing without the suite noticing.
 
 The calibration shows in the rules themselves: GHL017 (missing opt-out language) exempts
@@ -300,7 +320,14 @@ contact started. GHL018 (a tag trigger nothing feeds) ships as `low`, because fo
 bulk actions and humans also add tags — the finding asks a question rather than
 pretending to certainty the data cannot support. GHL025 reports at `medium` when it
 cannot see the account-level unsubscribe default and `high` only when it can confirm the
-default is off.
+default is off. GHL032 phrases its finding as "will land in stage *X* — confirm that is
+intended", because the first stage may genuinely be the intent and the value of the rule
+is in making the default visible. GHL031 checks a hard-coded from-number against the
+location's list on **full digit strings** (a last-ten-digits match would equate a UK
+mobile with a real US number), and says nothing at all about pool selections like
+"default number", which carry no number to check. GHL033 is worded as a risk rather
+than a defect, because the vendor's docs do not state whether the pre-payment trigger
+fires on a declined card — only that a confirmation should not be built on a maybe.
 
 Real false-positive classes found by running this against a live 19-workflow account and
 fixed rather than tolerated: reply detection expressed as `Replied` / `No reply` branches

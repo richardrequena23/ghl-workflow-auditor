@@ -1557,6 +1557,618 @@ def required_step_missing(acct: Account):
                  "healthy because nothing tells them a message stopped coming.")
 
 
+# --------------------------------------------------------------------------
+# GHL028+ — the failures practitioners actually report, distilled from the
+# vendor's own support portal and its idea board. Each one is a configuration
+# GoHighLevel accepts as valid and then executes exactly as written.
+# --------------------------------------------------------------------------
+
+def _cancel_guard(acct: Account):
+    """The workflow, if any, that pulls contacts out when an appointment dies.
+
+    GoHighLevel implements a reschedule as delete-and-recreate: "booked" fires
+    again for the new slot and nothing ever fires for the old one. So the only
+    thing standing between a cancelled or moved appointment and a reminder
+    ladder still counting down to it is a workflow that listens for Cancelled
+    and removes the contact. Finding it is what lets the reminder rule tell
+    "unhandled" apart from "handled somewhere else".
+    """
+    for wf in acct.published():
+        for t in wf.triggers:
+            if "appointment" not in t.type.lower():
+                continue
+            if "cancel" in t.filter_blob() and wf.exits():
+                return wf
+    return None
+
+
+@rule("GHL028", "Reminders for an appointment that no longer exists",
+      "critical", "routing", "appointments", "timing")
+def reminder_ladder_without_an_exit(acct: Account):
+    """An appointment-triggered sequence with no way out when the slot dies.
+
+    A reschedule in GoHighLevel deletes the appointment and creates a new one.
+    "Appointment Booked" fires again for the new time; "Cancelled" never fires
+    for the old one. A reminder ladder with no exit therefore runs BOTH ladders
+    — the contact gets reminders for two different times, one of them for a slot
+    that no longer exists. A working auditor calls duplicate reminders for old
+    times the most common fault found in audits, and the cancelled-reminder
+    complaint thread has been open with the vendor since 2019.
+
+    The exit can live in this workflow (a Remove-from-Workflow, a status gate)
+    or in a dedicated cancellation workflow that cleans up account-wide — both
+    count, which is why the whole account is read before anything is flagged.
+    """
+    guard = _cancel_guard(acct)
+    for wf in acct.published():
+        appt = [t for t in wf.triggers
+                if any(a in t.type.lower() for a in APPOINTMENT_TRIGGERS)]
+        if not appt:
+            continue
+        # A workflow the cancellation itself triggers is the cleanup lane, not
+        # the risk — its appointment is already gone.
+        if all("cancel" in t.filter_blob() for t in appt):
+            continue
+        if len(wf.outbound) < 2 or not any(s.is_wait for s in wf.steps):
+            continue
+        if wf.exits():
+            continue
+        if any(s.is_branch and re.search(r"cancel|resched|status",
+                                         s.name + " " + s.text(), re.I)
+               for s in wf.steps):
+            continue
+        if guard is not None:
+            yield _finding(
+                "GHL028", "low", wf,
+                f"Cancellations are handled by '{guard.name}' — confirm it "
+                "removes contacts from this workflow",
+                "This sequence has no exit of its own for a cancelled or "
+                "rescheduled appointment, which is correct when a dedicated "
+                "cancellation workflow pulls contacts out account-wide. But "
+                "that workflow removes contacts from a named list, and a "
+                "sequence added later is easy to leave off it. If this one is "
+                "missing, its reminders keep firing for the dead slot.",
+                f"Open '{guard.name}' and check its remove step names this "
+                "workflow.",
+                cost="If this sequence was left off the cleanup list, every "
+                     "cancelled appointment still gets its full reminder "
+                     "ladder — for a call that is not happening.")
+            continue
+        yield _finding(
+            "GHL028", "critical", wf,
+            f"{len(wf.outbound)} reminders keep sending after a cancel or "
+            "reschedule",
+            "Nothing removes a contact from this sequence when their "
+            "appointment is cancelled or moved. On a reschedule GoHighLevel "
+            "deletes the appointment and books a new one — the booked trigger "
+            "fires again, Cancelled never fires, and the contact is now inside "
+            "this ladder twice, getting reminders for two different times. On "
+            "a plain cancellation they keep getting reminders for a slot that "
+            "no longer exists. Nothing in this account handles either case.",
+            "Add an Appointment Status trigger covering Cancelled that removes "
+            "the contact from this workflow, or gate each reminder on an "
+            "If/Else that re-checks the appointment status before sending.",
+            cost="Every cancelled or moved appointment keeps being reminded "
+                 "about the old time. It reads as a business that does not "
+                 "know its own calendar, on the exact lead who was engaged "
+                 "enough to book.")
+
+
+@rule("GHL029", "Delayed messages with no send window", "high", "compliance",
+      "timing")
+def delayed_sends_without_a_window(acct: Account):
+    """An SMS or call fired after a wait, in a workflow with no send window.
+
+    A send that follows its trigger immediately inherits the trigger's hour —
+    the lead who submits a form at 11pm expects the instant reply at 11pm, and
+    flagging speed-to-lead for answering fast would be noise. A send that
+    follows a WAIT inherits nothing: "wait 3 days" lands at whatever hour the
+    trigger happened to fire, three days later. Without a window that is the
+    3am text.
+
+    Appointment-triggered workflows are exempt — their sends are timed off the
+    slot, and GHL004 exists precisely because a window on those HOLDS the
+    reminder past the call. Workflows with a documented window policy are
+    exempt too: GHL013 already reports drift against the documented window,
+    which is the sharper finding.
+    """
+    for wf in acct.published():
+        if wf.send_window():
+            continue
+        if acct.config.is_transactional(wf.name):
+            continue
+        configured, _ = acct.config.wants_window(wf.name)
+        if configured:
+            continue
+        if any(any(a in t.type.lower() for a in APPOINTMENT_TRIGGERS)
+               for t in wf.triggers):
+            continue
+        waited = False
+        delayed = []
+        for s in wf.steps:
+            if s.is_wait:
+                waited = True
+            elif waited and (s.is_sms or s.type in ("call", "manual_call",
+                                                    "voicemail")):
+                delayed.append(s)
+        if not delayed:
+            continue
+        yield _finding(
+            "GHL029", "high", wf,
+            f"{len(delayed)} message{'s' if len(delayed) != 1 else ''} can "
+            "fire at any hour of the night",
+            "These sends sit after a wait and this workflow has no send "
+            "window, so they go out at whatever hour the trigger originally "
+            "fired — a form submitted at 11:40pm produces a follow-up text at "
+            "11:40pm three days later. Quiet-hours rules in several states "
+            "stop at 8pm, and the recipient's first waking act is an opt-out "
+            "either way.",
+            "Set a send window on this workflow (9am-8pm in the contact's "
+            "timezone is the safe default). Leave windows OFF instant "
+            "responses and appointment reminders — they belong on exactly "
+            "this kind of delayed follow-up.",
+            step=delayed[0].name or delayed[0].type, reach=len(delayed),
+            cost="Texts at 3am. Opt-outs, complaints, and quiet-hours "
+                 "exposure in every state with an 8pm cutoff — from a "
+                 "follow-up that was supposed to be polite.")
+
+
+@rule("GHL030", "Re-entry setting that does nothing", "medium", "routing",
+      "settings")
+def reentry_toggle_is_a_noop(acct: Account):
+    """'Allow Re-entry' switched off where HighLevel documents it is ignored.
+
+    The settings doc is explicit: workflows using an appointment- or
+    invoice-based trigger ALWAYS allow a contact to enter multiple times. The
+    toggle still renders, still saves, and does nothing — so the builder
+    believes double-entry is impossible on exactly the workflows where it is
+    guaranteed. Nobody reports this as a bug because nobody ever learns the
+    setting was ignored; a static check is the only way it surfaces.
+    """
+    exempt = ("appointment", "invoice")
+    for wf in acct.published():
+        if not wf.triggers:
+            continue
+        if not all(any(k in t.type.lower() for k in exempt)
+                   for t in wf.triggers):
+            continue
+        declared_off = any(
+            wf.settings.get(k) is False
+            for k in ("allowReentry", "allow_reentry", "allowMultiple",
+                      "allow_multiple", "reentry", "re_entry"))
+        if not declared_off:
+            continue
+        yield _finding(
+            "GHL030", "medium", wf,
+            "Re-entry is OFF, and on this trigger the toggle is ignored",
+            "This workflow's triggers are appointment- or invoice-based, and "
+            "HighLevel documents that those always allow multiple entry "
+            "regardless of the Allow Re-entry setting. The OFF here is "
+            "cosmetic: a contact whose appointment fires the trigger twice "
+            "enters twice, and whoever built this believes the setting says "
+            "otherwise.",
+            "If one run per contact matters here, enforce it with a guard — "
+            "an If/Else on a tag this workflow adds on entry — instead of the "
+            "toggle. Then leave a note in the workflow name or description, "
+            "because the next builder will trust the toggle too.",
+            cost="Nothing until a trigger fires twice for one contact — then "
+                 "they get the whole sequence twice, and the setting everyone "
+                 "checked says it cannot happen.")
+
+
+def _declared_from_number(step) -> str:
+    """The hard-coded sending number on a step, if it carries one.
+
+    Pool selections ("default number", "user's number") carry no literal
+    number and return nothing here — they cannot be checked and must not be
+    guessed about.
+    """
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                nk = re.sub(r"[^a-z]", "", str(k).lower())
+                if nk in ("fromnumber", "fromphone", "fromphonenumber",
+                          "sendernumber", "sendfrom"):
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+                found = walk(v)
+                if found:
+                    return found
+        elif isinstance(node, list):
+            for v in node:
+                found = walk(v)
+                if found:
+                    return found
+        return ""
+    return walk(step.raw)
+
+
+def _same_number(a: str, b: str) -> bool:
+    """Digit-string equality, tolerant of one side carrying a country code.
+
+    Comparison is on FULL digit strings only. Matching on the last ten digits
+    would equate a UK mobile with a real US number that belongs to a stranger.
+    """
+    return bool(a) and bool(b) and (a == b or a == "1" + b or b == "1" + a)
+
+
+@rule("GHL031", "SMS steps with no number that can send them", "critical",
+      "deliverability", "sms")
+def sms_without_a_sending_number(acct: Account):
+    """The workflow sends SMS; the location has nothing to send it from.
+
+    HighLevel's own guidance: SMS actions fail SILENTLY when the location has
+    no phone number provisioned. The workflow runs, the contact appears in the
+    logs, the step is skipped, and no error is raised anywhere. The same
+    applies to a step whose hard-coded from-number was released, moved to
+    another sub-account, or is voice-only — the vendor has a dedicated KB
+    article for that error alone.
+    """
+    inv = acct.inventory
+    senders = [wf for wf in acct.published() if wf.sms_steps]
+    if not senders:
+        return
+    if not inv.has("phone_numbers"):
+        yield Skip(
+            rule="GHL031",
+            title="SMS steps with no number that can send them",
+            reason="The location's phone-number list was not supplied, so "
+                   "whether these SMS steps have an SMS-capable number behind "
+                   "them is unknown. The numbers live in the location's phone "
+                   "settings, not in the workflows.",
+            needs="phoneNumbers in the input bundle (number + sms capability)",
+            category="deliverability")
+        return
+    if not inv.sms_capable_numbers:
+        yield Finding(
+            rule="GHL031", severity="critical", workflow="(account)",
+            step=f"{len(senders)} workflows send SMS",
+            category="deliverability",
+            reach=sum(len(w.sms_steps) for w in senders),
+            title="No SMS-capable number in the location — every SMS step "
+                  "fails silently",
+            symptom=f"{len(senders)} published workflow"
+                    f"{'s' if len(senders) != 1 else ''} contain SMS steps and "
+                    "this location has no SMS-capable phone number. HighLevel "
+                    "documents exactly what happens: the workflow runs, the "
+                    "contact shows in the logs, the SMS step is skipped, and "
+                    "no error appears anywhere. Every text this account "
+                    "believes it is sending, it is not.",
+            cost="The entire SMS layer — speed-to-lead, reminders, follow-ups "
+                 "— has been doing nothing. Every metric that assumes those "
+                 "texts went out is fiction.",
+            fix="Provision a number (LC Phone or Twilio) for this location "
+                "and confirm it is SMS-capable and A2P-registered, then send "
+                "one real test text before trusting any workflow again.")
+        return
+
+    known = [re.sub(r"\D", "", n["number"]) for n in inv.sms_capable_numbers]
+    for wf in senders:
+        for step in wf.sms_steps:
+            declared = _declared_from_number(step)
+            if not declared or "{{" in declared:
+                continue
+            digits = re.sub(r"\D", "", declared)
+            if not digits:
+                continue
+            if any(_same_number(digits, k) for k in known):
+                continue
+            yield _finding(
+                "GHL031", "high", wf,
+                f"From-number {declared} is not an SMS-capable number in "
+                "this location",
+                "This step names its sending number explicitly, and that "
+                "number is not in the location's SMS-capable list. That is "
+                "the shape of a number that was released, moved to another "
+                "sub-account, or provisioned voice-only — and HighLevel "
+                "answers it with 'not a valid, SMS-capable phone number' "
+                "and no delivered message.",
+                "Point the step at one of the location's live SMS numbers, "
+                "or clear the from-number so it uses the location default.",
+                step=step.name or step.type,
+                cost="Every text from this step fails. The sequence around "
+                     "it keeps running, so the contact gets the day-3 email "
+                     "referring to a text they never received.")
+
+
+@rule("GHL032", "Opportunity created with no stage", "high", "routing", "data")
+def opportunity_with_no_stage(acct: Account):
+    """A Create Opportunity with a pipeline chosen and the stage left blank.
+
+    HighLevel's action doc: "If left blank, it defaults to the first stage in
+    the selected pipeline." So the opportunity a booking workflow creates
+    files itself as a brand-new lead — and every stage-based automation,
+    report and forecast downstream is quietly wrong about it. The first stage
+    MAY be intended, which is why this finding asks for confirmation instead
+    of declaring a defect.
+    """
+    inv = acct.inventory
+    for wf in acct.published():
+        for step in wf.steps_of("create_opportunity",
+                                "internal_create_opportunity",
+                                "add_opportunity"):
+            cfg = step.config()
+            pipe = stage = None
+            for k, v in cfg.items():
+                nk = re.sub(r"[^a-z]", "", str(k).lower())
+                if nk in ("pipelineid", "pipeline"):
+                    pipe = v
+                elif nk in ("stageid", "pipelinestageid", "stage"):
+                    stage = v
+            if not pipe or (isinstance(pipe, str) and "{{" in pipe):
+                continue
+            if stage not in (None, "", [], {}):
+                continue
+            first = next((s["name"] for s in inv.stages.values()
+                          if s.get("pipeline") == str(pipe) and s.get("name")),
+                         None)
+            lands = (f"its first stage, '{first}'" if first
+                     else "its first stage")
+            yield _finding(
+                "GHL032", "high", wf,
+                f"Stage left blank — every opportunity lands in {lands}",
+                "This step picks a pipeline and no stage, and HighLevel "
+                "defaults a blank stage to the first stage of the pipeline. "
+                f"Every opportunity it creates lands in {lands}, whatever "
+                "this workflow actually means — so a 'call booked' created "
+                "here is indistinguishable from a lead nobody has touched, "
+                "and every automation or report keyed on stage reads it "
+                "wrong.",
+                "Set the stage explicitly on this step. If the first stage "
+                "genuinely is the intent, set it anyway — an explicit choice "
+                "survives someone reordering the pipeline; the default does "
+                "not.",
+                step=step.name or step.type,
+                cost="Pipeline reporting is silently wrong by every "
+                     "opportunity this creates. Forecasts, stage automations "
+                     "and the sales team's queue all inherit the error.")
+
+
+CONFIRMATION_COPY = re.compile(
+    r"thank(s| you)[^.!\n]{0,50}\b(purchase|order)\b|"
+    r"\b(order|purchase|payment)\b[^.!\n]{0,30}\b(confirmed|complete[d]?|"
+    r"received|successful)\b|your receipt|receipt (is )?(attached|below)",
+    re.I)
+
+
+@rule("GHL033", "Purchase confirmation on the pre-payment trigger", "medium",
+      "routing", "triggers")
+def thanks_before_payment(acct: Account):
+    """"Thanks for your purchase" wired to Order Form SUBMITTED.
+
+    Order Form Submitted fires on the form-submission event, earlier in
+    checkout, and carries no product or price filters. Order Submitted fires
+    only after successful order creation. Confirmation copy on the first one
+    risks thanking people whose card declined — the vendor's docs do not state
+    whether the submission event fires on a decline, so this is raised as a
+    risk to confirm, not a certainty.
+    """
+    for wf in acct.published():
+        if not any(t.canonical_type() == "order_form_submitted"
+                   for t in wf.triggers):
+            continue
+        blob = wf.bodies() or wf.text()
+        grants = [s for s in wf.steps
+                  if any(k in s.type.lower() for k in ("membership", "grant",
+                                                       "course_access"))]
+        if not CONFIRMATION_COPY.search(blob) and not grants:
+            continue
+        yield _finding(
+            "GHL033", "medium", wf,
+            "Confirmation copy on the trigger that fires before payment "
+            "settles",
+            "This workflow triggers on Order Form Submitted — the "
+            "form-submission event, which happens earlier in checkout than "
+            "the order itself — and its content reads as a purchase "
+            "confirmation"
+            + (" (and it grants access)" if grants else "")
+            + ". Order Submitted is the trigger that fires only after the "
+              "order is actually created. Whether the submission event also "
+              "fires when the card declines is not documented, which is the "
+              "problem: a confirmation should not be built on a trigger "
+              "whose relationship to payment is a maybe.",
+            "Move the confirmation to the Order Submitted (or Payment "
+            "Received) trigger. Keep Order Form Submitted for what it is "
+            "good at — abandoned-checkout recovery for people who submitted "
+            "the form and never completed the order.",
+            cost="Best case, a premature thank-you. Worst case, declined "
+                 "cards get the confirmation and the product access, and "
+                 "you find out from the revenue report.")
+
+
+PUBLIC_SHORTENERS = ("bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly",
+                     "is.gd", "buff.ly", "rb.gy", "cutt.ly", "tiny.cc",
+                     "shorturl.at", "t.ly", "s.id", "soo.gd", "v.gd",
+                     "rebrand.ly", "short.io", "bl.ink")
+
+
+@rule("GHL034", "Public link shortener in an SMS", "medium", "deliverability",
+      "sms")
+def shortener_in_sms(acct: Account):
+    """bit.ly in a text message — a named driver of carrier filtering.
+
+    HighLevel's own 30007 guidance lists public link shorteners alongside
+    missing opt-out language as a top reason carriers filter messages, and
+    shared shortener domains are likewise a documented A2P campaign rejection
+    reason. The messages are accepted, then never delivered — which is the
+    worst failure shape, because the sending report says everything went out.
+    """
+    for wf in acct.published():
+        for step in wf.sms_steps:
+            body = step.bodies() or step.text()
+            hosts = []
+            for url in URL.findall(body):
+                m = re.match(r"https?://([^/:\s]+)", url, re.I)
+                host = m.group(1).lower() if m else ""
+                if any(host == s or host.endswith("." + s)
+                       for s in PUBLIC_SHORTENERS) \
+                        and not acct.config.owns_host(host):
+                    hosts.append(host)
+            if not hosts:
+                continue
+            yield _finding(
+                "GHL034", "medium", wf,
+                f"SMS contains a public shortener ({', '.join(sorted(set(hosts)))})",
+                "Carriers cannot see where a shared shortener domain leads, "
+                "so they filter on the domain's reputation — which is the "
+                "pooled reputation of everyone who ever used it, spammers "
+                "included. HighLevel names public shorteners as a top cause "
+                "of error 30007: message accepted, never delivered, no "
+                "bounce. The delivery report still shows it as sent.",
+                "Use GoHighLevel's trigger links or a branded short domain "
+                "instead. If click tracking is the point, trigger links also "
+                "fire workflow events, which a bit.ly cannot.",
+                step=step.name or step.type,
+                cost="Some unknown share of these texts is silently "
+                     "filtered. You pay for every send, the report says "
+                     "delivered, and the leads who never got the link read "
+                     "as 'unresponsive'.")
+
+
+TEST_ENDPOINT = re.compile(
+    r"^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|"
+    r"192\.168\.\d+\.\d+)$|"
+    r"(^|\.)webhook\.site$|(^|\.)requestbin\.com$|(^|\.)pipedream\.net$|"
+    r"(^|\.)ngrok(-free)?\.(io|app|dev)$|"
+    r"\.(test|local|localdomain|invalid)$",
+    re.I)
+
+
+@rule("GHL035", "Webhook aimed at a test endpoint", "high", "hygiene",
+      "portability")
+def webhook_to_nowhere(acct: Account):
+    """An outbound webhook still pointing at the tool used to debug it.
+
+    webhook.site, ngrok tunnels, localhost — the URLs that made sense on the
+    day the integration was built and mean 'nowhere' in production. HighLevel
+    skips a failed webhook silently and the workflow continues, so the lead
+    data this step was supposed to deliver has simply not been arriving, with
+    no error to say so. The check reads the URL only; it never posts to it —
+    a live probe could fire a real side effect.
+    """
+    for wf in acct.published():
+        for step in wf.steps_of("webhook", "http_request", "outbound_webhook"):
+            for url in URL.findall(step.text()):
+                m = re.match(r"(https?)://([^/:\s]+)", url, re.I)
+                if not m:
+                    continue
+                scheme, host = m.group(1).lower(), m.group(2).lower()
+                if TEST_ENDPOINT.search(host):
+                    yield _finding(
+                        "GHL035", "high", wf,
+                        f"Webhook posts to {host} — a debugging endpoint",
+                        "This URL is a test or tunnel host: the kind used to "
+                        "inspect payloads while building, not to receive them "
+                        "in production. Tunnels expire and inspection pages "
+                        "discard, so whatever this integration was meant to "
+                        "deliver — attribution, reporting, a CRM sync — has "
+                        "not been arriving. HighLevel skips a failed webhook "
+                        "and moves on, so nothing ever errored.",
+                        "Point the webhook at the production endpoint (via a "
+                        "custom value, so it survives cloning), and check "
+                        "how long it has been posting into the void — that "
+                        "is how much data needs re-sending.",
+                        step=step.name or step.type,
+                        cost="Every contact through this step since the URL "
+                             "was left here is missing from whatever system "
+                             "sits behind it. The gap is invisible until "
+                             "someone reconciles the two ends.")
+                elif scheme == "http":
+                    yield _finding(
+                        "GHL035", "medium", wf,
+                        "Webhook posts contact data over plain http",
+                        "This webhook sends its payload unencrypted. The "
+                        "payload is contact data — names, phones, emails, "
+                        "answers — and an http endpoint is also the shape of "
+                        "a URL typed quickly during a build and never "
+                        "revisited. Many receivers now refuse http outright, "
+                        "and HighLevel would skip that failure silently.",
+                        "Switch the endpoint to https. If the receiver "
+                        "genuinely has no TLS, that is the thing to fix.",
+                        step=step.name or step.type,
+                        cost="Customer data crosses the network readable by "
+                             "anyone on the path — a compliance finding in "
+                             "any audit, for the cost of one letter.")
+
+
+@rule("GHL036", "Deprecated appointment trigger", "medium", "routing",
+      "triggers")
+def deprecated_booking_trigger(acct: Account):
+    """"Customer Booked Appointment" — fires for self-bookings only.
+
+    The vendor documents two problems in one trigger: it only fires when the
+    customer books through a widget or link (an appointment a team member
+    books by hand never enters the workflow), and it is being deprecated in
+    favour of Appointment Status with Modified By = Customer. Confirmations
+    and reminders built on it silently skip every manually-booked client.
+    """
+    for wf in acct.published():
+        for t in wf.triggers:
+            if "customerbooked" not in re.sub(r"[^a-z]", "", t.type.lower()):
+                continue
+            yield _finding(
+                "GHL036", "medium", wf,
+                "Trigger only fires for self-booked appointments, and is "
+                "being retired",
+                "'Customer Booked Appointment' fires only when the contact "
+                "books through a calendar widget or booking link. Anyone a "
+                "team member books by hand never enters this workflow — no "
+                "confirmation, no reminders — and staff-booked clients are "
+                "exactly the ones nobody double-checks. HighLevel is also "
+                "deprecating this trigger, so the gap comes with a deadline.",
+                "Rebuild on Appointment Status (status: confirmed, Modified "
+                "By: Customer to keep the old behaviour — drop the Modified "
+                "By filter to cover staff bookings too, which is usually "
+                "what was wanted all along).",
+                step=t.name or t.type,
+                cost="Every manually-booked appointment runs without "
+                     "confirmations or reminders. Those no-shows get "
+                     "blamed on the client.")
+
+
+@rule("GHL037", "Finished build sitting in draft", "medium", "dead_weight",
+      "hygiene")
+def draft_with_a_live_trigger(acct: Account):
+    """Built, saved, never published — so it has never run.
+
+    Saved and published are independent states in GoHighLevel, snapshots
+    deploy their workflows in draft, and 'the workflow was never published'
+    is the first item in every troubleshooting guide the vendor and its
+    operators publish. A draft carrying a configured trigger and real steps
+    is the shape of a build someone finished and forgot to turn on — flagged
+    for confirmation, because an intentional work-in-progress looks the same.
+    """
+    for wf in acct.workflows:
+        if wf.published:
+            continue
+        if not wf.triggers or not wf.steps:
+            continue
+        if re.search(r"\b(sandbox|test|probe|wip|draft|old|archived?|backup|"
+                     r"untitled|deprecated|copy of|do.?not.?use|zz)\b",
+                     wf.name, re.I):
+            continue
+        sends = len(wf.outbound)
+        yield _finding(
+            "GHL037", "medium" if sends else "low", wf,
+            "Complete workflow, configured trigger — never published",
+            "This workflow has a trigger and "
+            f"{len(wf.steps)} step{'s' if len(wf.steps) != 1 else ''}"
+            + (f" including {sends} outbound send"
+               f"{'s' if sends != 1 else ''}" if sends else "")
+            + ", and it is in draft, so none of it has ever run. Saved is "
+              "not published — they are separate states, and snapshots "
+              "deploy in draft — which makes a finished-looking draft the "
+              "single most common reason 'the automation never fired'. If "
+              "it is genuinely still being built, name it so ('WIP -') and "
+              "this check will leave it alone.",
+            "Publish it if it is finished. If it is abandoned, delete it or "
+            "mark the name, so the next person does not have to work out "
+            "which it is.",
+            cost="Everything this workflow was built to do has never "
+                 "happened. If something else was supposed to depend on it, "
+                 "that has been failing quietly too.")
+
+
 def run(acct: Account, min_severity: str = "low",
         only: Iterable[str] | None = None) -> list[Finding]:
     """Run the catalog. Returns findings sorted most severe first."""

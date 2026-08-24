@@ -40,7 +40,10 @@
         },
         {
           "type": "create_opportunity",
-          "name": "Create opportunity"
+          "name": "Create opportunity",
+          "meta": {
+            "pipelineId": "pipe_sales"
+          }
         }
       ],
       "settings": {
@@ -164,7 +167,7 @@
           "type": "sms",
           "name": "Nudge",
           "meta": {
-            "body": "Just checking back."
+            "body": "Just checking back - grab a time here: https://bit.ly/3xR2mQ"
           }
         },
         {
@@ -355,6 +358,7 @@
           "type": "sms",
           "name": "Welcome text",
           "meta": {
+            "fromNumber": "+1 (555) 010-8845",
             "body": "Hi {{ contact.first_name }}, thanks for reaching out about {{ contact.servcie_interest }} - grab a time here: {{ custom_values.booking_link }}"
           }
         }
@@ -523,6 +527,13 @@
           }
         },
         {
+          "type": "webhook",
+          "name": "Sync to the reporting sheet",
+          "meta": {
+            "url": "https://webhook.site/9d41c2aa-probe"
+          }
+        },
+        {
           "type": "email",
           "name": "What happens next",
           "meta": {
@@ -570,6 +581,71 @@
           "meta": {
             "subject": "Another time?",
             "body": "Here are a few more slots this week."
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": false
+      }
+    },
+    {
+      "_id": "wf_order",
+      "name": "Course Purchase - Thank You",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "order_form_submitted",
+          "name": "Order form",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Purchase confirmation",
+          "meta": {
+            "subject": "You're in!",
+            "body": "Thanks for your purchase - your order is confirmed. Receipt to follow."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_referral",
+      "name": "Referral Ask - Warm Clients",
+      "status": "draft",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged referral-ready",
+          "filters": [
+            {
+              "tag": "referral-ready"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "The ask",
+          "meta": {
+            "body": "Loved working with you - know anyone else who could use us? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 5 days",
+          "meta": {
+            "delay": "5 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "One nudge",
+          "meta": {
+            "body": "No pressure - the intro means a lot if someone comes to mind."
           }
         }
       ],
@@ -641,6 +717,12 @@
   "emailSettings": {
     "default_unsubscribe": false
   },
+  "phoneNumbers": [
+    {
+      "number": "+15550109900",
+      "sms": true
+    }
+  ],
   "tags": [
     "hot-lead",
     "nurture-me",
@@ -687,6 +769,9 @@
     },
     "wf_rebook": {
       "enrollments": 17
+    },
+    "wf_order": {
+      "enrollments": 41
     }
   },
   "config": {

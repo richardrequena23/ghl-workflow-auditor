@@ -453,6 +453,11 @@ class Trigger:
                 ("tagremoved", "tag_removed"), ("removedtag", "tag_removed"),
                 ("contactcreated", "contact_created"),
                 ("newcontact", "contact_created"),
+                # Order matters: "orderformsubmit" contains "formsubmit", and
+                # collapsing the two would erase the exact distinction GHL033
+                # exists to check (pre-payment vs post-payment trigger).
+                ("orderformsubmit", "order_form_submitted"),
+                ("ordersubmit", "order_submitted"),
                 ("formsubmit", "form_submitted"),
                 ("surveysubmit", "survey_submitted"),
                 ("inboundmessage", "inbound_message"),
@@ -465,8 +470,6 @@ class Trigger:
                 ("callstatus", "call_status"),
                 ("opportunitystatus", "opportunity_status"),
                 ("opportunitystagechanged", "opportunity_stage"),
-                ("orderformsubmit", "order_form_submitted"),
-                ("ordersubmit", "order_submitted"),
         ):
             if needle in t:
                 return canon
