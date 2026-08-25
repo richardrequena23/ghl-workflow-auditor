@@ -1698,7 +1698,9 @@ def delayed_sends_without_a_window(acct: Account):
         delayed = []
         for s in wf.steps:
             if s.is_wait:
-                waited = True
+                # A wait carrying its own send window resumes inside that
+                # window, so the send right after it is timed, not stray.
+                waited = not _step_window(s)
             elif waited and (s.is_sms or s.type in ("call", "manual_call",
                                                     "voicemail")):
                 delayed.append(s)
@@ -2178,6 +2180,258 @@ def draft_with_a_live_trigger(acct: Account):
             cost="Everything this workflow was built to do has never "
                  "happened. If something else was supposed to depend on it, "
                  "that has been failing quietly too.")
+
+
+def _nk(key) -> str:
+    return re.sub(r"[^a-z]", "", str(key).lower())
+
+
+WINDOW_KEYS = {"window", "sendingwindow", "sendwindow", "advancewindow",
+               "advancewindowsettings", "timewindow"}
+
+
+def _step_window(step) -> bool:
+    cfg = step.config()
+    if not isinstance(cfg, dict):
+        return False
+    return any(_nk(k) in WINDOW_KEYS and v not in (None, "", {}, [], False)
+               for k, v in cfg.items())
+
+
+@rule("GHL038", "Stacked windowed waits drift the whole sequence", "low",
+      "routing", "timing")
+def compounding_window_drift(acct: Account):
+    """Three or more consecutive waits, each carrying its own send window.
+
+    Every windowed wait that lands outside its window rolls forward to the
+    next opening — usually the next morning. Stack three of them and the
+    drift compounds: a sequence written as five days runs in eight, and every
+    touch lands at window-open, exactly when everyone else's does. The
+    operator guidance is one line: apply windows to the steps that send, not
+    to structural waits. Advisory by design — short windows add little and
+    the pacing may be intended.
+    """
+    for wf in acct.published():
+        streak: list = []
+        for i, step in enumerate(wf.steps):
+            if step.is_wait and _step_window(step):
+                streak.append((i, step))
+                continue
+            # Anything else — a send, a branch, even a plain wait — breaks the
+            # streak. Only strictly consecutive windowed waits are flagged;
+            # the field guidance this encodes is written about exactly that
+            # stack, and an advisory rule earns its keep by underclaiming.
+            if len(streak) >= 3:
+                yield _drift_finding(wf, streak)
+            streak = []
+        if len(streak) >= 3:
+            yield _drift_finding(wf, streak)
+
+
+def _drift_finding(wf, streak):
+    last_i = streak[-1][0]
+    below = len(wf.outbound_after(last_i))
+    names = ", ".join(s.name or s.type for _, s in streak)
+    return _finding(
+        "GHL038", "low", wf,
+        f"{len(streak)} windowed waits in a row — each boundary can add "
+        "a day",
+        "Each of these waits carries its own send window, and every time one "
+        "of them ends outside its window the resume rolls forward to the next "
+        "opening. Stacked, the drift compounds: the sequence takes days "
+        "longer than it was written to, and the touches bunch at "
+        "window-open alongside everything else the account sends. If the "
+        "pacing is deliberate, this costs nothing — that judgement is the "
+        "reader's, which is why this is advisory.",
+        "Put the window on the steps that send, not on structural waits. One "
+        "window on the SMS step gives the same quiet hours without "
+        "compounding the delay.",
+        step=names, reach=below,
+        cost="Later touches in this sequence land days later than designed — "
+             "against a lead who is going cold on someone else's schedule, "
+             "not yours.")
+
+
+OPP_CREATE_TYPES = ("create_opportunity", "internal_create_opportunity",
+                    "add_opportunity")
+OPP_WRITE_TYPES = OPP_CREATE_TYPES + ("update_opportunity",
+                                      "internal_update_opportunity",
+                                      "update_opportunity_status")
+
+
+def _pipe_stage(step):
+    """(pipeline_id, stage_id) off an opportunity step, merge fields excluded."""
+    pipe = stage = None
+    cfg = step.config()
+    for k, v in (cfg.items() if isinstance(cfg, dict) else ()):
+        if not isinstance(v, str) or "{{" in v or not v:
+            continue
+        nk = _nk(k)
+        if nk in ("pipelineid", "pipeline"):
+            pipe = v
+        elif nk in ("stageid", "pipelinestageid", "stage"):
+            stage = v
+    return pipe, stage
+
+
+@rule("GHL039", "Several workflows create opportunities on one pipeline",
+      "medium", "routing", "data")
+def multiple_opportunity_writers(acct: Account):
+    """Two or more live workflows each running Create Opportunity on the same
+    pipeline — the headline cause in every duplicate-opportunity teardown.
+
+    One on the form workflow, another on the appointment workflow, a third
+    shipped inside a snapshot: each is correct alone, and together one
+    contact who submits and then books gets two opportunities. Pipeline
+    counts, conversion rates and forecasts all double-count from then on.
+    Raised as a possible duplicate source, never a confirmed one — mutually
+    exclusive entry filters can make two writers legitimate, and that is not
+    decidable from configuration.
+    """
+    writers: dict = {}
+    for wf in acct.published():
+        for step in wf.steps_of(*OPP_CREATE_TYPES):
+            pipe, _ = _pipe_stage(step)
+            if pipe:
+                writers.setdefault(pipe, {})[wf.name] = wf
+    inv = acct.inventory
+    for pipe in sorted(writers):
+        wfs = [writers[pipe][n] for n in sorted(writers[pipe])]
+        if len(wfs) < 2:
+            continue
+        label = inv.pipelines.get(str(pipe)) or pipe
+        reenters = [w.name for w in wfs if _allows_reentry(w)]
+        names = ", ".join(w.name for w in wfs)
+        yield Finding(
+            rule="GHL039", severity="high" if reenters else "medium",
+            workflow=wfs[0].name, step=", ".join(w.name for w in wfs[1:]),
+            category="routing",
+            reach=sum(len(w.outbound) for w in wfs),
+            title=f"{len(wfs)} workflows each create an opportunity on "
+                  f"'{label}'",
+            symptom=f"Each of these creates its own opportunity on the same "
+                    f"pipeline: {names}. A contact who passes through more "
+                    "than one of them — submits a form, then books a call — "
+                    "gets one opportunity per workflow, and every pipeline "
+                    "count, conversion rate and forecast double-counts from "
+                    "then on."
+                    + (" Re-enrollment is on for: " + ", ".join(reenters)
+                       + " — so one contact can mint a new opportunity on "
+                         "every lap." if reenters else "")
+                    + " If the entry conditions are genuinely mutually "
+                      "exclusive this is fine — this is raised as a possible "
+                      "duplicate source to confirm, not a verdict.",
+            fix="Pick one workflow to own opportunity creation and have the "
+                "others update the existing record instead (or gate creation "
+                "behind an 'opportunity exists' check). If several must "
+                "create, make their entry filters provably exclusive.",
+            cost="Pipeline reporting double-counts every contact who touches "
+                 "two of these paths. The sales team works the same person "
+                 "as two deals, and the forecast is quietly inflated.")
+
+
+STAGE_TRIGGER_TYPES = ("opportunity_status", "opportunity_stage")
+
+
+def _trigger_stages(trigger) -> set:
+    """Stage ids/names this trigger listens for, lowercased."""
+    out = set()
+    for f in trigger.filters():
+        if not isinstance(f, dict):
+            continue
+        field_names_stage = any(
+            _nk(k) in ("field", "key", "property", "name", "attribute")
+            and "stage" in str(v).lower() for k, v in f.items())
+        for k, v in f.items():
+            nk = _nk(k)
+            values = v if isinstance(v, (list, tuple)) else [v]
+            if "stage" in nk or (field_names_stage and
+                                 nk in ("value", "values", "val")):
+                out.update(str(x).strip().lower() for x in values
+                           if isinstance(x, str) and x.strip())
+    return out
+
+
+@rule("GHL040", "Workflows re-trigger each other through pipeline stages",
+      "medium", "routing", "triggers", "data")
+def stage_write_cycle(acct: Account):
+    """The pipeline-stage analogue of the tag loop (GHL014).
+
+    Workflow A moves the opportunity to a stage that enrolls workflow B; B
+    moves it to a stage that enrolls A. Each is correct alone. Together they
+    loop — or bounce a contact out of a sequence that was still mid-flight.
+    Nothing in the builder shows the pair. Reported as a possible conflict:
+    filters or one-shot guards the analysis cannot see may break the loop in
+    practice.
+    """
+    pubs = list(acct.published())
+    by_id = {w.id: w for w in pubs}
+    listeners: dict = {}
+    for w in pubs:
+        for t in w.triggers:
+            if t.canonical_type() in STAGE_TRIGGER_TYPES:
+                for stage in _trigger_stages(t):
+                    listeners.setdefault(stage, []).append(w.id)
+    edges: dict = {}
+    for w in pubs:
+        for step in w.steps_of(*OPP_WRITE_TYPES):
+            _, stage = _pipe_stage(step)
+            if not stage:
+                continue
+            for other in listeners.get(stage.strip().lower(), []):
+                edges.setdefault(w.id, set()).add(other)
+
+    reported = set()
+
+    def cycles_from(start, node, path):
+        for nxt in sorted(edges.get(node, ())):
+            if nxt == start:
+                yield path[:]
+            elif nxt not in path:
+                yield from cycles_from(start, nxt, path + [nxt])
+
+    for start in sorted(edges):
+        for cycle in cycles_from(start, start, [start]):
+            key = frozenset(cycle)
+            if key in reported:
+                continue
+            reported.add(key)
+            wfs = [by_id[i] for i in cycle]
+            reenters = any(_allows_reentry(w) for w in wfs)
+            if len(wfs) == 1:
+                title = (f"'{wfs[0].name}' writes the stage that "
+                         "triggers itself")
+            else:
+                title = ("Stage loop: "
+                         + " <-> ".join(w.name for w in wfs))
+            yield Finding(
+                rule="GHL040", severity="high" if reenters else "medium",
+                workflow=wfs[0].name,
+                step=" -> ".join(w.name for w in wfs), category="routing",
+                reach=sum(len(w.outbound) for w in wfs),
+                title=title,
+                symptom="Each workflow in this chain moves the opportunity "
+                        "to a stage that enrolls the next one, and the chain "
+                        "closes on itself. "
+                        + ("Re-enrollment is on inside the loop, so one "
+                           "opportunity can cycle through it repeatedly — "
+                           "stage history, alerts and any messaging along "
+                           "the way included."
+                           if reenters else
+                           "Re-enrollment is off, which caps it at one lap "
+                           "today — but each lap still yanks the contact "
+                           "between sequences, and the first person to allow "
+                           "re-entry makes it spin.")
+                        + " Filters this analysis cannot evaluate may break "
+                          "the loop in practice, so treat this as a possible "
+                          "conflict to walk through, not a verdict.",
+                fix="Decide which workflow owns each stage transition. Break "
+                    "the cycle at its weakest link: narrow one trigger, or "
+                    "drop the stage write that closes the loop.",
+                cost="Opportunities ping-pong between stages, so stage "
+                     "history and conversion timing are fiction — and any "
+                     "messages hanging off these stages re-send on every "
+                     "lap.")
 
 
 def run(acct: Account, min_severity: str = "low",

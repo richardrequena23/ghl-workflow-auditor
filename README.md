@@ -8,21 +8,21 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-37-19D3B0)
+![rules](https://img.shields.io/badge/rules-40-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
-Account health: 15/100  (F)   Customers are receiving the wrong messages right now.
+Account health: 18/100  (F)   Customers are receiving the wrong messages right now.
 
-15 workflows audited. 64 findings: 7 critical, 34 high, 16 medium, 7 low  [37 of 37 checks ran]
+19 workflows audited. 71 findings: 7 critical, 36 high, 17 medium, 11 low  [40 of 40 checks ran]
 
-  Compliance        50/100  [############............]  11 findings
-  Deliverability    78/100  [###################.....]  4 findings
-  Routing           25/100  [######..................]  27 findings
-  Hygiene           47/100  [###########.............]  15 findings
-  Dead weight       84/100  [####################....]  7 findings
+  Compliance        55/100  [#############...........]  11 findings
+  Deliverability    82/100  [####################....]  4 findings
+  Routing           28/100  [#######.................]  31 findings
+  Hygiene           51/100  [############............]  18 findings
+  Dead weight       87/100  [#####################...]  7 findings
 
 Fix in this order — ranked by what each one costs:
   1. [GHL019] Wait for an event with no timeout — 3 messages below it never send
@@ -221,12 +221,15 @@ Workflow names match case- and whitespace-insensitively.
 | GHL024 | medium | hygiene | A `\| default:` fallback written into an SMS, where fallbacks do not apply |
 | GHL030 | medium | routing | Re-entry OFF on an appointment/invoice trigger — the setting HighLevel documents it ignores |
 | GHL033 | medium | routing | "Thanks for your purchase" on the pre-payment trigger — declined cards get thanked |
+| GHL039 | medium | routing | Several workflows each creating opportunities on one pipeline — duplicate deals |
+| GHL040 | medium | routing | Workflows re-triggering each other through pipeline stages — the stage-write loop |
 | GHL034 | medium | deliverability | Public link shortener in an SMS — a named driver of carrier filtering |
 | GHL036 | medium | routing | Deprecated "Customer Booked Appointment" trigger — manual bookings never enter |
 | GHL037 | medium | dead_weight | A finished build sitting in draft — saved is not published |
 | GHL007 | low | hygiene | Deprecated `create_opportunity` / `update_opportunity` |
 | GHL012 | low | hygiene | Sandbox or test workflow left published |
 | GHL013 | low | compliance | Send window in account time, not the contact's — or wiped from the workflow |
+| GHL038 | low | routing | Three-plus windowed waits stacked — every boundary drifts the sequence a day |
 | GHL018 | low | dead_weight | Tag-triggered workflow whose tag nothing in the account adds |
 | GHL026 | low | dead_weight | Published workflow that nothing has enrolled in |
 
@@ -320,7 +323,7 @@ is the thing people actually forget when they add a calendar later.
 A rule that fires on everything gets ignored, and then the report is worthless. Every
 rule ships with a test that trips it **and** a test that must not trip it — **206 tests**
 in [`tests/test_rules.py`](tests/test_rules.py), run against Python 3.9–3.13 on every
-push. The shipped example account trips **all 37 rules**, and a test enforces that, so a
+push. The shipped example account trips **all 40 rules**, and a test enforces that, so a
 rule cannot rot into never firing without the suite noticing.
 
 The calibration shows in the rules themselves: GHL017 (missing opt-out language) exempts

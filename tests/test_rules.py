@@ -1296,6 +1296,144 @@ class DraftRules(unittest.TestCase):
 
 
 # ==========================================================================
+# GHL038-040 — windowed-wait drift, opportunity writers, stage loops
+# ==========================================================================
+
+def windowed_wait(name="Wait 1 day"):
+    return {"type": "wait", "name": name,
+            "meta": {"delay": "1 day",
+                     "window": {"start": "09:00", "end": "17:00"}}}
+
+
+def opp_create(pipe="pipe_sales", stage="stg_new", kind="create_opportunity"):
+    return {"type": kind, "name": "Create opportunity",
+            "meta": {"pipelineId": pipe, "stageId": stage}}
+
+
+def stage_trigger(stage):
+    return {"type": "opportunity_stage_changed", "name": "Stage changed",
+            "filters": [{"field": "stage", "value": stage}]}
+
+
+OPTOUT_SMS = "quick check-in about your project. Reply STOP to opt out."
+
+
+class WindowDriftRules(unittest.TestCase):
+    def test_three_windowed_waits_in_a_row_are_flagged(self):
+        steps = [sms(body=OPTOUT_SMS), windowed_wait("W1"), windowed_wait("W2"),
+                 windowed_wait("W3"), sms("After", OPTOUT_SMS)]
+        found = findings_for("GHL038", [wf("Drip", steps)])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "low")
+        self.assertEqual(found[0].reach, 1)
+
+    def test_two_windowed_waits_pass(self):
+        steps = [windowed_wait("W1"), windowed_wait("W2"),
+                 sms("After", OPTOUT_SMS)]
+        self.assertNotIn("GHL038", rules_hit([wf("Drip", steps)]))
+
+    def test_an_unwindowed_wait_does_not_extend_the_streak(self):
+        steps = [windowed_wait("W1"), windowed_wait("W2"), wait("Plain"),
+                 windowed_wait("W3"), sms("After", OPTOUT_SMS)]
+        self.assertNotIn("GHL038", rules_hit([wf("Drip", steps)]))
+
+    def test_a_send_after_a_windowed_wait_is_not_a_night_send(self):
+        """The wait's own window times the resume — GHL029 must not call the
+        send after it a 3am text."""
+        steps = [windowed_wait("W1"), sms("After", OPTOUT_SMS)]
+        self.assertNotIn("GHL029", rules_hit([wf("Drip", steps)]))
+
+
+class OpportunityWriterRules(unittest.TestCase):
+    def test_two_creators_on_one_pipeline_are_flagged(self):
+        a = wf("Form Intake", [opp_create()],
+               [{"type": "form_submitted", "filters": []}])
+        b = wf("Booking Flow", [opp_create()],
+               [{"type": "survey_submitted", "filters": []}])
+        found = findings_for("GHL039", [a, b])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "medium")
+
+    def test_different_pipelines_pass(self):
+        a = wf("Form Intake", [opp_create("pipe_a")],
+               [{"type": "form_submitted", "filters": []}])
+        b = wf("Booking Flow", [opp_create("pipe_b")],
+               [{"type": "survey_submitted", "filters": []}])
+        self.assertNotIn("GHL039", rules_hit([a, b]))
+
+    def test_a_single_creator_passes(self):
+        a = wf("Form Intake", [opp_create()],
+               [{"type": "form_submitted", "filters": []}])
+        self.assertNotIn("GHL039", rules_hit([a]))
+
+    def test_reentry_on_a_writer_escalates_to_high(self):
+        a = wf("Form Intake", [opp_create()],
+               [{"type": "form_submitted", "filters": []}],
+               settings={"allowMultiple": True})
+        b = wf("Booking Flow", [opp_create()],
+               [{"type": "survey_submitted", "filters": []}])
+        self.assertEqual(findings_for("GHL039", [a, b])[0].severity, "high")
+
+    def test_a_merge_field_pipeline_is_not_counted(self):
+        a = wf("Form Intake", [opp_create("{{ custom_values.pipeline }}")],
+               [{"type": "form_submitted", "filters": []}])
+        b = wf("Booking Flow", [opp_create("{{ custom_values.pipeline }}")],
+               [{"type": "survey_submitted", "filters": []}])
+        self.assertNotIn("GHL039", rules_hit([a, b]))
+
+    def test_updaters_do_not_count_as_creators(self):
+        a = wf("Form Intake", [opp_create()],
+               [{"type": "form_submitted", "filters": []}])
+        b = wf("Stage Mover", [opp_create(kind="update_opportunity")],
+               [{"type": "survey_submitted", "filters": []}])
+        self.assertNotIn("GHL039", rules_hit([a, b]))
+
+
+class StageLoopRules(unittest.TestCase):
+    def test_a_two_workflow_stage_cycle_is_flagged_once(self):
+        a = wf("Reopen", [opp_create(stage="stg_new",
+                                     kind="update_opportunity")],
+               [stage_trigger("stg_booked")])
+        b = wf("Rebook", [opp_create(stage="stg_booked",
+                                     kind="update_opportunity")],
+               [stage_trigger("stg_new")])
+        found = findings_for("GHL040", [a, b])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "medium")
+
+    def test_a_one_way_stage_write_passes(self):
+        a = wf("Reopen", [opp_create(stage="stg_new",
+                                     kind="update_opportunity")],
+               [stage_trigger("stg_booked")])
+        b = wf("Listener", [sms(body=OPTOUT_SMS)], [stage_trigger("stg_new")])
+        self.assertNotIn("GHL040", rules_hit([a, b]))
+
+    def test_a_self_loop_is_flagged(self):
+        a = wf("Loop", [opp_create(stage="stg_new",
+                                   kind="update_opportunity")],
+               [stage_trigger("stg_new")])
+        found = findings_for("GHL040", [a])
+        self.assertEqual(len(found), 1)
+        self.assertIn("itself", found[0].title)
+
+    def test_reentry_in_the_cycle_escalates_to_high(self):
+        a = wf("Reopen", [opp_create(stage="stg_new",
+                                     kind="update_opportunity")],
+               [stage_trigger("stg_booked")],
+               settings={"allowMultiple": True})
+        b = wf("Rebook", [opp_create(stage="stg_booked",
+                                     kind="update_opportunity")],
+               [stage_trigger("stg_new")])
+        self.assertEqual(findings_for("GHL040", [a, b])[0].severity, "high")
+
+    def test_stage_triggers_are_not_read_as_tag_triggers(self):
+        """'stage' contains 'tag' (s-TAG-e) — a substring test fed stage ids
+        into the tag dead-weight and tag-loop checks as phantom tags."""
+        a = wf("Reopen", [sms(body=OPTOUT_SMS)], [stage_trigger("stg_booked")])
+        self.assertNotIn("GHL018", rules_hit([a], tags=["stg_booked"]))
+
+
+# ==========================================================================
 # Scoring and reporting
 # ==========================================================================
 

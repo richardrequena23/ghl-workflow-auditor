@@ -596,7 +596,11 @@ class Workflow:
     def trigger_tags(self) -> set[str]:
         out: set[str] = set()
         for t in self.triggers:
-            if "tag" in t.type.lower():
+            # "stage" contains "tag" (s-TAG-e), so a bare substring test read
+            # every pipeline-stage trigger as a tag trigger and its stage ids
+            # as tags — phantom dead-weight and loop findings.
+            nk = t.type.lower()
+            if "tag" in nk and "stage" not in nk:
                 out |= t.tag_values()
         return out
 
