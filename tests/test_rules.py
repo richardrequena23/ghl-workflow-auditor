@@ -1770,3 +1770,260 @@ class Robustness(unittest.TestCase):
         findings, skips = run_all(acct)
         for render in (as_text, as_markdown, as_json, as_html):
             self.assertTrue(render(findings, 1, skips))
+
+
+# --------------------------------------------------------------------------
+# GHL041-GHL052 — the reliability rules
+# --------------------------------------------------------------------------
+
+def webhook(name="Sync", url="https://api.example.com/sync", **meta):
+    m = {"url": url}
+    m.update(meta)
+    return {"type": "webhook", "name": name, "meta": m}
+
+
+class ExternalCallFailurePathRules(unittest.TestCase):
+    def test_webhook_with_no_saved_response_is_flagged(self):
+        found = findings_for("GHL041", [wf("Order Sync", [webhook()])])
+        self.assertEqual([f.severity for f in found], ["high"])
+
+    def test_saved_response_with_a_branch_after_it_passes(self):
+        steps = [webhook(saveResponse=True),
+                 {"type": "if_else", "name": "Did the sync succeed?",
+                  "meta": {"conditions": [{"field": "response.status"}]}}]
+        self.assertNotIn("GHL041", rules_hit([wf("Order Sync", steps)]))
+
+    def test_saved_but_unread_response_is_a_medium(self):
+        found = findings_for("GHL041",
+                             [wf("Order Sync", [webhook(saveResponse=True)])])
+        self.assertEqual([f.severity for f in found], ["medium"])
+
+    def test_draft_workflows_are_not_checked(self):
+        hits = rules_hit([wf("Order Sync", [webhook()], status="draft")])
+        self.assertNotIn("GHL041", hits)
+
+
+class RetrySilentlyDisabledRules(unittest.TestCase):
+    def test_retry_plus_continue_is_flagged(self):
+        steps = [{"type": "n8n-nodes-base.httpRequest", "name": "Call API",
+                  "meta": {"retryOnFail": True, "maxTries": 3,
+                           "onError": "continueRegularOutput"}}]
+        self.assertIn("GHL042", rules_hit([wf("Sync Worker", steps)]))
+
+    def test_retry_with_stop_workflow_passes(self):
+        steps = [{"type": "n8n-nodes-base.httpRequest", "name": "Call API",
+                  "meta": {"retryOnFail": True, "maxTries": 3,
+                           "onError": "stopWorkflow"}}]
+        self.assertNotIn("GHL042", rules_hit([wf("Sync Worker", steps)]))
+
+    def test_a_ghl_step_declaring_neither_key_is_left_alone(self):
+        self.assertNotIn("GHL042", rules_hit([wf("Seq", [sms()])]))
+
+
+class ErrorWorkflowRules(unittest.TestCase):
+    N8N_STEP = {"type": "n8n-nodes-base.httpRequest", "name": "Call API",
+                "typeVersion": 4, "meta": {}}
+
+    def test_n8n_workflow_without_error_workflow_is_flagged(self):
+        self.assertIn("GHL043", rules_hit([wf("Sync", [self.N8N_STEP])]))
+
+    def test_n8n_workflow_with_error_workflow_passes(self):
+        w = wf("Sync", [self.N8N_STEP],
+               settings={"errorWorkflow": "wf_error_handler"})
+        self.assertNotIn("GHL043", rules_hit([w]))
+
+    def test_a_ghl_workflow_is_not_held_to_an_n8n_setting(self):
+        self.assertNotIn("GHL043", rules_hit([wf("Seq", [sms()])]))
+
+
+class CreateVsUpsertRules(unittest.TestCase):
+    def test_create_contact_is_flagged_as_duplicate_risk(self):
+        steps = [{"type": "create_contact", "name": "New lead",
+                  "meta": {"email": "{{ inboundWebhookRequest.email }}"}}]
+        self.assertIn("GHL044", rules_hit([wf("Lead Import", steps)]))
+
+    def test_upsert_contact_passes(self):
+        steps = [{"type": "upsert_contact", "name": "New or existing lead",
+                  "meta": {"email": "{{ inboundWebhookRequest.email }}"}}]
+        self.assertNotIn("GHL044", rules_hit([wf("Lead Import", steps)]))
+
+
+INBOUND_HOOK = {"type": "inbound_webhook", "name": "From the store"}
+
+
+class InboundDedupeRules(unittest.TestCase):
+    def test_side_effect_with_no_dedupe_guard_is_flagged(self):
+        w = wf("Order Intake", [sms("Thanks")], [INBOUND_HOOK])
+        self.assertIn("GHL045", rules_hit([w]))
+
+    def test_event_id_check_before_the_side_effect_passes(self):
+        steps = [{"type": "if_else", "name": "Duplicate event_id? exit",
+                  "meta": {"conditions": [
+                      {"field": "contact.last_event_id",
+                       "value": "{{ inboundWebhookRequest.event_id }}"}]}},
+                 sms("Thanks")]
+        w = wf("Order Intake", steps, [INBOUND_HOOK])
+        self.assertNotIn("GHL045", rules_hit([w]))
+
+    def test_non_webhook_triggers_are_not_checked(self):
+        w = wf("Welcome", [sms("Hi")], [{"type": "form_submitted"}])
+        self.assertNotIn("GHL045", rules_hit([w]))
+
+    def test_a_webhook_workflow_with_no_side_effects_is_left_alone(self):
+        steps = [{"type": "update_contact_field", "name": "Stamp it",
+                  "meta": {"field": "last_seen", "value": "now"}}]
+        w = wf("Order Intake", steps, [INBOUND_HOOK])
+        self.assertNotIn("GHL045", rules_hit([w]))
+
+
+class RetryLoopBoundRules(unittest.TestCase):
+    def test_goto_loop_with_no_counter_is_flagged(self):
+        steps = [webhook(), wait("Wait 5 minutes"),
+                 {"type": "goto", "name": "Back to the call",
+                  "meta": {"targetStepId": "step_1"}}]
+        self.assertIn("GHL046", rules_hit([wf("Sync Retry", steps)]))
+
+    def test_goto_guarded_by_an_attempt_counter_passes(self):
+        steps = [webhook(), wait("Wait 5 minutes"),
+                 {"type": "if_else", "name": "attempt_count under 3?",
+                  "meta": {"conditions": [
+                      {"field": "contact.attempt_count", "operator": "lt",
+                       "value": "3"}]}},
+                 {"type": "goto", "name": "Back to the call",
+                  "meta": {"targetStepId": "step_1"}}]
+        self.assertNotIn("GHL046", rules_hit([wf("Sync Retry", steps)]))
+
+    def test_a_workflow_with_no_goto_is_left_alone(self):
+        self.assertNotIn("GHL046", rules_hit([wf("Seq", [sms()])]))
+
+
+def field_write(field, name="Set the field"):
+    return {"type": "update_contact_field", "name": name,
+            "meta": {"field": field, "value": "x"}}
+
+
+class FieldOwnershipRules(unittest.TestCase):
+    def test_two_workflows_writing_one_field_is_flagged(self):
+        hits = rules_hit([wf("Intake", [field_write("lead_state")]),
+                          wf("Booking", [field_write("lead_state")])])
+        self.assertIn("GHL047", hits)
+
+    def test_different_fields_pass(self):
+        hits = rules_hit([wf("Intake", [field_write("lead_state")]),
+                          wf("Booking", [field_write("booked_at")])])
+        self.assertNotIn("GHL047", hits)
+
+    def test_one_workflow_writing_twice_is_not_a_race(self):
+        w = wf("Intake", [field_write("lead_state"),
+                          field_write("lead_state", "Set it again")])
+        self.assertNotIn("GHL047", rules_hit([w]))
+
+    def test_merge_field_targets_are_not_compared(self):
+        hits = rules_hit([
+            wf("Intake", [field_write("{{ contact.chosen_field }}")]),
+            wf("Booking", [field_write("{{ contact.chosen_field }}")])])
+        self.assertNotIn("GHL047", hits)
+
+
+SCHEDULE = {"type": "schedule", "name": "Every night"}
+
+
+class HeartbeatRules(unittest.TestCase):
+    def test_scheduled_workflow_with_no_outbound_call_is_flagged(self):
+        w = wf("Nightly Sweep", [field_write("last_swept_at")], [SCHEDULE])
+        self.assertIn("GHL048", rules_hit([w]))
+
+    def test_scheduled_workflow_with_a_webhook_is_left_alone(self):
+        w = wf("Nightly Sweep", [field_write("last_swept_at"),
+                                 webhook("Ping the monitor")], [SCHEDULE])
+        self.assertNotIn("GHL048", rules_hit([w]))
+
+    def test_event_triggered_workflows_are_not_checked(self):
+        w = wf("Welcome", [sms("Hi")], [{"type": "form_submitted"}])
+        self.assertNotIn("GHL048", rules_hit([w]))
+
+
+def ai_step(name="Classify the reply", **meta):
+    return {"type": "chatgpt", "name": name, "meta": meta}
+
+
+class AiEnumRules(unittest.TestCase):
+    def test_unconstrained_ai_output_feeding_a_branch_is_flagged(self):
+        steps = [ai_step(prompt="What does this lead want?"),
+                 {"type": "if_else", "name": "Route on intent",
+                  "meta": {"conditions": [{"field": "contact.intent"}]}}]
+        self.assertIn("GHL049", rules_hit([wf("AI Router", steps)]))
+
+    def test_enum_constrained_ai_step_passes(self):
+        steps = [ai_step(prompt="Classify the reply",
+                         options=["interested", "objection", "opt_out"]),
+                 {"type": "if_else", "name": "Route on intent",
+                  "meta": {"conditions": [{"field": "contact.intent"}]}}]
+        self.assertNotIn("GHL049", rules_hit([wf("AI Router", steps)]))
+
+    def test_ai_step_with_no_branch_after_it_is_left_alone(self):
+        steps = [ai_step(prompt="Summarise the conversation"),
+                 sms("A human-written follow-up")]
+        self.assertNotIn("GHL049", rules_hit([wf("AI Notes", steps)]))
+
+    def test_email_and_wait_steps_are_not_mistaken_for_ai(self):
+        steps = [email("Plain email"), wait(),
+                 {"type": "if_else", "name": "Opened?", "meta": {}}]
+        self.assertNotIn("GHL049", rules_hit([wf("Nurture", steps)]))
+
+
+class AiApprovalRules(unittest.TestCase):
+    def test_automatic_send_of_ai_output_is_flagged(self):
+        steps = [ai_step("Draft a reply"),
+                 sms("Send it", body="{{ ai.reply_draft }}")]
+        self.assertIn("GHL050", rules_hit([wf("AI Responder", steps)]))
+
+    def test_manual_send_is_its_own_gate(self):
+        steps = [ai_step("Draft a reply"),
+                 {"type": "manual_sms", "name": "Review and send",
+                  "meta": {"body": "{{ ai.reply_draft }}"}}]
+        self.assertNotIn("GHL050", rules_hit([wf("AI Responder", steps)]))
+
+    def test_human_written_copy_is_left_alone(self):
+        steps = [ai_step("Classify the reply"),
+                 sms("Send it", body="Thanks - a human wrote this.")]
+        self.assertNotIn("GHL050", rules_hit([wf("AI Responder", steps)]))
+
+
+class LegacySignatureRules(unittest.TestCase):
+    def test_legacy_only_header_is_critical(self):
+        steps = [webhook(headers={"X-WH-Signature": "{{ secret }}"})]
+        found = findings_for("GHL051", [wf("Verify Gateway", steps)])
+        self.assertEqual([f.severity for f in found], ["critical"])
+        self.assertIn("2026", found[0].title)
+
+    def test_both_headers_read_as_a_migration_in_hand(self):
+        steps = [webhook(headers={"X-WH-Signature": "{{ old }}",
+                                  "X-GHL-Signature": "{{ new }}"})]
+        self.assertNotIn("GHL051", rules_hit([wf("Verify Gateway", steps)]))
+
+    def test_legacy_header_in_a_custom_value_is_flagged(self):
+        found = findings_for(
+            "GHL051", [wf("Seq", [sms()])],
+            custom_values={"signature_header": "X-WH-Signature"})
+        self.assertEqual([f.workflow for f in found], ["(custom values)"])
+
+    def test_an_account_that_never_mentions_it_is_left_alone(self):
+        self.assertNotIn("GHL051", rules_hit([wf("Seq", [sms()])]))
+
+
+class PoisonResponseRules(unittest.TestCase):
+    def test_declared_500_on_a_bad_record_is_flagged(self):
+        steps = [{"type": "webhook_reply", "name": "Reject bad records",
+                  "meta": {"responseCode": 500}}]
+        self.assertIn("GHL052", rules_hit([wf("Order Intake", steps,
+                                              [INBOUND_HOOK])]))
+
+    def test_a_200_ack_passes(self):
+        steps = [{"type": "webhook_reply", "name": "Ack everything",
+                  "meta": {"responseCode": 200}}]
+        self.assertNotIn("GHL052", rules_hit([wf("Order Intake", steps,
+                                                 [INBOUND_HOOK])]))
+
+    def test_steps_with_no_declared_status_are_left_alone(self):
+        self.assertNotIn("GHL052", rules_hit([wf("Seq", [sms()])]))

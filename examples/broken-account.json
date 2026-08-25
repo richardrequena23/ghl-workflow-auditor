@@ -794,6 +794,192 @@
      }
     }
    ]
+  },
+  {
+   "_id": "wf_order_intake",
+   "name": "Store Orders - Intake & Fulfillment Sync",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "inbound_webhook",
+     "name": "Order webhook from the store"
+    }
+   ],
+   "steps": [
+    {
+     "type": "webhook_reply",
+     "name": "Reject malformed orders",
+     "meta": {
+      "responseCode": 500
+     }
+    },
+    {
+     "type": "create_contact",
+     "name": "Create the buyer",
+     "meta": {
+      "email": "{{ inboundWebhookRequest.email }}",
+      "phone": "{{ inboundWebhookRequest.phone }}"
+     }
+    },
+    {
+     "type": "webhook",
+     "name": "Push to fulfillment",
+     "meta": {
+      "url": "{{ custom_values.integration_webhook_url }}"
+     }
+    },
+    {
+     "type": "wait",
+     "name": "Wait 5 minutes",
+     "meta": {
+      "delay": "5 minutes"
+     }
+    },
+    {
+     "type": "goto",
+     "name": "Try the push again",
+     "meta": {
+      "targetStepName": "Push to fulfillment"
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_ai_router",
+   "name": "AI Reply Router",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "customer_replied",
+     "name": "Inbound SMS"
+    }
+   ],
+   "steps": [
+    {
+     "type": "chatgpt",
+     "name": "Read the reply",
+     "meta": {
+      "prompt": "What does this lead want? Reply with the intent and a suggested response."
+     }
+    },
+    {
+     "type": "update_contact_field",
+     "name": "Record the intent",
+     "meta": {
+      "field": "lead_state",
+      "value": "{{ ai.intent }}"
+     }
+    },
+    {
+     "type": "if_else",
+     "name": "Route on intent",
+     "meta": {
+      "conditions": [
+       {
+        "field": "contact.lead_state",
+        "value": "interested"
+       }
+      ]
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Send the AI draft",
+     "meta": {
+      "body": "{{ ai.reply_draft }}"
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_booking_stamp",
+   "name": "Booking - Stamp the Lead State",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "appointment_status",
+     "name": "Confirmed",
+     "filters": [
+      {
+       "field": "status",
+       "value": "confirmed"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "update_contact_field",
+     "name": "Mark as booked",
+     "meta": {
+      "field": "lead_state",
+      "value": "booked"
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_nightly_sweep",
+   "name": "Nightly Reconciliation Sweep",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "schedule",
+     "name": "Every night at 2am"
+    }
+   ],
+   "steps": [
+    {
+     "type": "update_contact_field",
+     "name": "Stamp the sweep",
+     "meta": {
+      "field": "last_swept_at",
+      "value": "{{ right_now.date }}"
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_n8n_gateway",
+   "name": "n8n - Webhook Verification Gateway",
+   "status": "published",
+   "triggers": [],
+   "steps": [
+    {
+     "type": "n8n-nodes-base.webhook",
+     "name": "Receive from GHL",
+     "typeVersion": 2,
+     "meta": {
+      "httpMethod": "POST",
+      "rawBody": true
+     }
+    },
+    {
+     "type": "n8n-nodes-base.code",
+     "name": "Verify X-WH-Signature",
+     "typeVersion": 2,
+     "meta": {
+      "jsCode": "// verify the X-WH-Signature header (RSA)\nreturn items;"
+     }
+    },
+    {
+     "type": "n8n-nodes-base.httpRequest",
+     "name": "Forward to the CRM",
+     "typeVersion": 4,
+     "meta": {
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput",
+      "url": "https://services.leadconnectorhq.com/contacts/upsert"
+     }
+    }
+   ],
+   "settings": {}
   }
  ],
  "customFields": [

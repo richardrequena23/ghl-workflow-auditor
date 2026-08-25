@@ -8,28 +8,28 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-40-19D3B0)
+![rules](https://img.shields.io/badge/rules-52-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
-Account health: 18/100  (F)   Customers are receiving the wrong messages right now.
+Account health: 18/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
 
-19 workflows audited. 71 findings: 7 critical, 36 high, 17 medium, 11 low  [40 of 40 checks ran]
+24 workflows audited. 86 findings: 8 critical, 45 high, 22 medium, 11 low  [52 of 52 checks ran]
 
-  Compliance        55/100  [#############...........]  11 findings
-  Deliverability    82/100  [####################....]  4 findings
-  Routing           28/100  [#######.................]  31 findings
-  Hygiene           51/100  [############............]  18 findings
-  Dead weight       87/100  [#####################...]  7 findings
+  Compliance        61/100  [###############.........]  11 findings
+  Deliverability    85/100  [####################....]  4 findings
+  Routing           27/100  [######..................]  43 findings
+  Hygiene           51/100  [############............]  21 findings
+  Dead weight       89/100  [#####################...]  7 findings
 
 Fix in this order — ranked by what each one costs:
-  1. [GHL019] Wait for an event with no timeout — 3 messages below it never send
-  2. [GHL028] 3 reminders keep sending after a cancel or reschedule
-  3. [GHL001] Appointment trigger fires on every status change
-  4. [GHL002] Call trigger is not narrowed to missed calls
-  5. [GHL014] Tag loop: Hot Lead Alert <-> Long Term Nurture
+  1. [GHL019] Wait for an event with no timeout — 3 messages below it never send  (Speed to Lead - 5 Minute Response)
+  2. [GHL028] 3 reminders keep sending after a cancel or reschedule  (Strategy Call - Booking & Reminders)
+  3. [GHL001] Appointment trigger fires on every status change  (No Show Recovery)
+  4. [GHL002] Call trigger is not narrowed to missed calls  (Missed Call Text Back)
+  5. [GHL014] Tag loop: Hot Lead Alert <-> Long Term Nurture  (Hot Lead Alert)
 ```
 
 That is the real output of `python -m ghlaudit examples/broken-account.json` against
@@ -199,6 +199,7 @@ Workflow names match case- and whitespace-insensitively.
 | GHL020 | critical | hygiene | A step pointing at a calendar, user, pipeline or template that no longer exists |
 | GHL028 | critical | routing | Appointment reminders that keep firing after a cancel or reschedule |
 | GHL031 | critical | deliverability | SMS steps with no SMS-capable number behind them — sends fail silently |
+| GHL051 | critical | hygiene | Integration verifying only the legacy `X-WH-Signature` header — dead on Sep 1, 2026 |
 | GHL003 | high | routing | Multi-touch sequence with nothing listening for a reply |
 | GHL004 | high | routing | Quiet hours on a reminder ladder — the window *holds* the message |
 | GHL008 | high | hygiene | Placeholder custom value, or a merge field with no field behind it |
@@ -212,6 +213,12 @@ Workflow names match case- and whitespace-insensitively.
 | GHL029 | high | compliance | SMS after a wait, with no send window anywhere — the 3am text |
 | GHL032 | high | routing | Opportunity created with a pipeline chosen and no stage — files as a brand-new lead |
 | GHL035 | high | hygiene | Webhook aimed at webhook.site, ngrok or localhost — or posting over plain http |
+| GHL041 | high | routing | External call with no error branch — a failure is silently skipped |
+| GHL042 | high | routing | Retry On Fail enabled while On Error is a Continue option — retries never happen |
+| GHL045 | high | routing | Inbound webhook processed with no dedupe check — every retry runs it all again |
+| GHL046 | high | routing | Go-To retry loop with no attempt counter — a poison record loops forever |
+| GHL049 | high | routing | AI output branched on with no enum constraint — routing on model prose |
+| GHL050 | high | routing | AI-generated text sent to a customer with no approval gate |
 | GHL005 | medium | deliverability | Reactivation blast with no throttle |
 | GHL006 | medium | hygiene | Webhook posting to a hardcoded URL instead of a custom value |
 | GHL009 | medium | routing | Reply alerts with no once-per-conversation guard |
@@ -226,6 +233,11 @@ Workflow names match case- and whitespace-insensitively.
 | GHL034 | medium | deliverability | Public link shortener in an SMS — a named driver of carrier filtering |
 | GHL036 | medium | routing | Deprecated "Customer Booked Appointment" trigger — manual bookings never enter |
 | GHL037 | medium | dead_weight | A finished build sitting in draft — saved is not published |
+| GHL043 | medium | routing | n8n workflow with no error workflow attached — failures land in a list nobody reads |
+| GHL044 | medium | routing | Create Contact where an upsert belonged — the classic duplicate-contact source |
+| GHL047 | medium | routing | Several workflows writing the same contact field — a last-write-wins race |
+| GHL048 | medium | hygiene | Scheduled workflow with no heartbeat — if it stops, nothing ever says so |
+| GHL052 | medium | routing | Webhook handler answering a bad record with 4xx/5xx — which orders 12 redeliveries |
 | GHL007 | low | hygiene | Deprecated `create_opportunity` / `update_opportunity` |
 | GHL012 | low | hygiene | Sandbox or test workflow left published |
 | GHL013 | low | compliance | Send window in account time, not the contact's — or wiped from the workflow |
@@ -321,9 +333,9 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **206 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **274 tests**
 in [`tests/test_rules.py`](tests/test_rules.py), run against Python 3.9–3.13 on every
-push. The shipped example account trips **all 40 rules**, and a test enforces that, so a
+push. The shipped example account trips **all 52 rules**, and a test enforces that, so a
 rule cannot rot into never firing without the suite noticing.
 
 The calibration shows in the rules themselves: GHL017 (missing opt-out language) exempts
@@ -345,6 +357,18 @@ Real false-positive classes found by running this against a live 19-workflow acc
 fixed rather than tolerated: reply detection expressed as `Replied` / `No reply` branches
 off a wait step (the way the UI actually builds it), and custom values whose display name
 differs from their merge key.
+
+The reliability rules (GHL041–GHL052) are calibrated the same way. GHL042 and GHL043
+read settings only n8n-style exports carry, so a GoHighLevel-native workflow — which
+declares neither a retry toggle nor an error-workflow slot — is never held to them.
+GHL044 and GHL047 are worded as risks to confirm, not verdicts: whether a create
+duplicates depends on the location's Allow Duplicate Contacts setting, and two writers
+on one field are legitimate when their triggers are provably exclusive — neither is
+decidable from the export. GHL048 stays quiet about any scheduled workflow that carries
+a webhook call, because whether that call is a heartbeat is not knowable statically.
+GHL050 treats a manual send step as its own approval gate — a human releases it — and
+flags only automatic sends of AI-merged copy. GHL051 says nothing when both signature
+headers appear together, which reads as a migration already in hand.
 
 ## Known limits
 
