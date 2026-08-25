@@ -774,18 +774,27 @@ def duplicate_enrollment(acct: Account):
 
 GREETING_FIELD = re.compile(
     r"\b(hi|hey|hello|good\s+(?:morning|afternoon|evening))\s*,?\s*"
-    r"\{\{\s*contact\.(first_name|name|full_name|last_name)\s*\}\}", re.I)
+    r"\{\{\s*contact\.(first_name|name|full_name|last_name)\s*\}\}"
+    r"[ \t]*([,.!?;:])", re.I)
 
 
 @rule("GHL016", "Greeting merges a contact field with no fallback", "medium", "hygiene", "copy")
 def bare_greeting_field(acct: Account):
+    """Fires only when an empty field actually breaks the sentence.
+
+    The tell is punctuation hugging the merge: 'Hey {{first_name}},' renders
+    as 'Hey ,'. Copy that sets the name off with spaces — 'Hey
+    {{first_name}} - quick question' — survives a blank as 'Hey - quick
+    question' and is the correct SMS form, so it must pass; flagging it
+    punished the account that already degraded gracefully.
+    """
     for wf in acct.published():
         for step in wf.outbound:
             m = GREETING_FIELD.search(step.text())
             if m:
                 yield _finding(
                     "GHL016", "medium", wf,
-                    f"Greeting renders as '{m.group(1)} ,' when "
+                    f"Greeting renders as '{m.group(1)} {m.group(3)}' when "
                     f"{m.group(2)} is empty",
                     "Imported lists and form fills routinely leave the name field "
                     "blank, and GoHighLevel renders a missing merge field as empty "
@@ -793,8 +802,10 @@ def bare_greeting_field(acct: Account):
                     "the tell of an automated blast, to exactly the lead you were "
                     "trying to sound personal for.",
                     "Give the merge field a default value, or write the opener so "
-                    "it survives an empty field ('Hey there' beats 'Hey ,'). Then "
-                    "fix the import so names actually arrive."
+                    "it survives an empty field: set the name off with spaces and "
+                    "no touching punctuation ('Hey {{first_name}} - quick "
+                    "question' blanks to 'Hey - quick question'), or drop the "
+                    "name ('Hey there'). Then fix the import so names arrive."
                     + (" Note that in SMS there is no fallback to give it — "
                        "HighLevel documents fallback values for email only — so "
                        "the copy itself has to survive the blank."

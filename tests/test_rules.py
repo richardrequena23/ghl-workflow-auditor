@@ -405,6 +405,16 @@ class CopyRules(unittest.TestCase):
         steps = [sms("Welcome", "Thanks for booking, {{ contact.first_name }}!")]
         self.assertNotIn("GHL016", rules_hit([wf("Welcome", steps)]))
 
+    def test_a_greeting_that_degrades_gracefully_passes(self):
+        """'Hey {{first_name}} - x' blanks to 'Hey - x': correct SMS form."""
+        steps = [sms("Welcome",
+                     "Hey {{contact.first_name}} - thanks for reaching out")]
+        self.assertNotIn("GHL016", rules_hit([wf("Welcome", steps)]))
+
+    def test_a_period_hugging_the_name_still_fires(self):
+        steps = [sms("Welcome", "Hi {{contact.first_name}}. Quick question")]
+        self.assertIn("GHL016", rules_hit([wf("Welcome", steps)]))
+
 
 class ComplianceRules(unittest.TestCase):
     def test_multi_sms_sequence_without_opt_out(self):
