@@ -1896,6 +1896,21 @@ class RetryLoopBoundRules(unittest.TestCase):
     def test_a_workflow_with_no_goto_is_left_alone(self):
         self.assertNotIn("GHL046", rules_hit([wf("Seq", [sms()])]))
 
+    def test_gotowebinar_node_is_a_product_name_not_a_loop(self):
+        # Corpus regression (Gotowebinar_Automate.json): a substring match on
+        # "goto" tripped on n8n's GoToWebinar integration node. No loop here.
+        steps = [{"type": "n8n-nodes-base.goToWebinar", "name": "GoToWebinar2",
+                  "parameters": {"operation": "create",
+                                 "resource": "registrant"}},
+                 sms("Confirm")]
+        self.assertNotIn("GHL046", rules_hit([wf("Webinar Signup", steps)]))
+
+    def test_namespaced_goto_still_counts_as_a_loop(self):
+        steps = [webhook(), wait("Wait 5 minutes"),
+                 {"type": "workflow.go_to", "name": "Back to the call",
+                  "meta": {"targetStepId": "step_1"}}]
+        self.assertIn("GHL046", rules_hit([wf("Sync Retry", steps)]))
+
 
 def field_write(field, name="Set the field"):
     return {"type": "update_contact_field", "name": name,
@@ -1966,6 +1981,25 @@ class AiEnumRules(unittest.TestCase):
                  sms("A human-written follow-up")]
         self.assertNotIn("GHL049", rules_hit([wf("AI Notes", steps)]))
 
+    def test_unconstrained_ai_step_with_nested_parameters_is_flagged(self):
+        # n8n-shaped AI node: settings live under `parameters`, not `meta`.
+        steps = [{"type": "n8n-nodes-base.openAi", "name": "Classify",
+                  "parameters": {"prompt": "What does this lead want?"}},
+                 {"type": "if_else", "name": "Route on intent",
+                  "meta": {"conditions": [{"field": "contact.intent"}]}}]
+        self.assertIn("GHL049", rules_hit([wf("AI Router", steps)]))
+
+    def test_enum_nested_under_parameters_options_passes(self):
+        # The enum can hide a level down (parameters.options.categories) —
+        # the constraint must be found there, not only at the top level.
+        steps = [{"type": "n8n-nodes-base.openAi", "name": "Classify",
+                  "parameters": {"prompt": "Classify the reply",
+                                 "options": {"categories": [
+                                     "interested", "objection", "opt_out"]}}},
+                 {"type": "if_else", "name": "Route on intent",
+                  "meta": {"conditions": [{"field": "contact.intent"}]}}]
+        self.assertNotIn("GHL049", rules_hit([wf("AI Router", steps)]))
+
     def test_email_and_wait_steps_are_not_mistaken_for_ai(self):
         steps = [email("Plain email"), wait(),
                  {"type": "if_else", "name": "Opened?", "meta": {}}]
@@ -2027,3 +2061,22 @@ class PoisonResponseRules(unittest.TestCase):
 
     def test_steps_with_no_declared_status_are_left_alone(self):
         self.assertNotIn("GHL052", rules_hit([wf("Seq", [sms()])]))
+
+    def test_n8n_nested_options_response_code_500_is_flagged(self):
+        # Corpus regression: n8n's respondToWebhook declares the code at
+        # parameters.options.responseCode — 41 corpus workflows carried a
+        # non-2xx there and a top-level-only config scan missed all of them.
+        steps = [{"type": "n8n-nodes-base.respondToWebhook",
+                  "name": "Respond to Webhook",
+                  "parameters": {"respondWith": "text",
+                                 "options": {"responseCode": 500}}}]
+        self.assertIn("GHL052", rules_hit([wf("Order Intake", steps,
+                                              [INBOUND_HOOK])]))
+
+    def test_n8n_nested_options_200_ack_passes(self):
+        steps = [{"type": "n8n-nodes-base.respondToWebhook",
+                  "name": "Respond to Webhook",
+                  "parameters": {"respondWith": "text",
+                                 "options": {"responseCode": 200}}}]
+        self.assertNotIn("GHL052", rules_hit([wf("Order Intake", steps,
+                                                 [INBOUND_HOOK])]))
