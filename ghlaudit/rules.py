@@ -2434,6 +2434,723 @@ def stage_write_cycle(acct: Account):
                      "lap.")
 
 
+# --------------------------------------------------------------------------
+# GHL041+ — reliability engineering: the patterns the turnaround buyer is
+# actually paying for. Each rule encodes one named pattern from the reliability
+# pattern library (idempotency, bounded retries, DLQ, heartbeats, AI gating),
+# checked mechanically against the export. The buyer's own words: "edge cases
+# that were not handled, API failures, data synchronization issues and a lack
+# of proper monitoring and error recovery."
+# --------------------------------------------------------------------------
+
+WEBHOOK_CALL_TYPES = ("webhook", "http_request", "outbound_webhook",
+                      "custom_webhook")
+
+SAVE_RESPONSE_KEYS = {"saveresponse", "savewebhookresponse",
+                      "saveresponsedata", "storeresponse", "captureresponse"}
+
+
+@rule("GHL041", "External call whose failure is invisible", "high", "routing",
+      "reliability", "webhooks")
+def external_call_without_a_failure_path(acct: Account):
+    """A webhook/API call with no error branch wired.
+
+    HighLevel documents that a failed Custom Webhook is skipped and the
+    contact continues down the workflow — the retry behaviour of the workflow
+    action is unspecified, so the safe design assumption is that a failure is
+    silently skipped. The senior build never assumes the call succeeded: it
+    enables "Save response from this Webhook" and branches on the response
+    with an If/Else, routing no-response to the error path. Without that, the
+    failure path is a crash the platform swallows, not a route.
+    """
+    for wf in acct.published():
+        for i, step in enumerate(wf.steps):
+            if step.type not in WEBHOOK_CALL_TYPES:
+                continue
+            cfg = step.config()
+            saves = any(_nk(k) in SAVE_RESPONSE_KEYS
+                        and v not in (None, "", False, 0)
+                        for k, v in (cfg.items() if isinstance(cfg, dict)
+                                     else ()))
+            branches_after = any(s.is_branch for s in wf.steps[i + 1:])
+            if saves and branches_after:
+                continue
+            if saves:
+                yield _finding(
+                    "GHL041", "medium", wf,
+                    "Webhook response is captured, and nothing reads it",
+                    "This call saves its response, but no If/Else after it "
+                    "ever branches on what came back. A failed call is "
+                    "recorded and then ignored: the contact continues down "
+                    "the workflow as if the integration succeeded, and the "
+                    "captured error sits unread in the execution log.",
+                    "Add an If/Else after the call that checks the saved "
+                    "response. No response captured = treat as failure and "
+                    "route to an error path — a tag like 'err:sync-failed' "
+                    "plus a notification is enough to make failures visible.",
+                    step=step.name or step.type,
+                    cost="Failures are logged and nobody is told. The "
+                         "integration can be down for weeks while every "
+                         "contact sails past the broken step.")
+                continue
+            yield _finding(
+                "GHL041", "high", wf,
+                "External call with no error branch — a failure is silently "
+                "skipped",
+                "HighLevel skips a failed webhook action and continues the "
+                "workflow, and this step neither saves its response nor has "
+                "any branch downstream that could notice a failure. Every "
+                "record this call was supposed to deliver on a bad day — an "
+                "outage, a rate limit, an expired token — is simply lost, "
+                "and nothing anywhere reports it. This is the exact shape of "
+                "'leads just never showed up in the other system'.",
+                "Enable 'Save response from this Webhook' on the step, then "
+                "branch on the response with an If/Else: success continues, "
+                "no-response routes to an error path (tag the contact "
+                "'err:sync-failed', set a last_error field, notify a human). "
+                "The failure path must be a route, not a crash.",
+                step=step.name or step.type,
+                cost="Every contact that hits this step while the endpoint "
+                     "is down vanishes from the downstream system. The gap "
+                     "is invisible until someone reconciles the two ends, "
+                     "months of leads later.")
+
+
+RETRY_ON_KEYS = {"retryonfail", "retryenabled", "retriesenabled"}
+CONTINUE_KEYS = {"onerror", "onfail", "errorbehavior"}
+
+
+@rule("GHL042", "Retries enabled and silently disabled", "high", "routing",
+      "reliability", "retries")
+def retry_silently_disabled(acct: Account):
+    """Retry On Fail enabled while On Error is set to a Continue option.
+
+    n8n's documented behaviour: if a node enables Retry On Fail AND sets On
+    Error to one of the Continue options, Max Tries and Wait Between Tries
+    are ignored — the node continues on the FIRST failure instead of
+    retrying. So 'I turned on retries' and 'retries actually happen' are
+    different states, and lots of production workflows are quietly in the
+    first one. It looks configured and is not, which is what makes it
+    high-yield in an audit. The check reads the step's own declared settings,
+    so it fires only on exports that carry them (n8n and n8n-style bundles);
+    a GoHighLevel-native step declares neither key and stays out of it.
+    """
+    for wf in acct.workflows:
+        for step in wf.steps:
+            cfg = step.config()
+            if not isinstance(cfg, dict):
+                continue
+            retry_on = any(
+                _nk(k) in RETRY_ON_KEYS and (v is True or
+                                             str(v).strip().lower() == "true")
+                for k, v in cfg.items())
+            if not retry_on:
+                continue
+            continues = any(
+                (_nk(k) in CONTINUE_KEYS and "continue" in str(v).lower()) or
+                (_nk(k) == "continueonfail" and (v is True or
+                                                 str(v).strip().lower() == "true"))
+                for k, v in cfg.items())
+            if not continues:
+                continue
+            yield _finding(
+                "GHL042", "high", wf,
+                "Retry On Fail is on, and the Continue setting disables it",
+                "This step enables Retry On Fail and also sets its on-error "
+                "behaviour to a Continue option. n8n documents what that "
+                "combination does: Max Tries and Wait Between Tries are "
+                "ignored, and the step continues after the FIRST failure "
+                "instead of retrying. The retry policy someone deliberately "
+                "configured here has never once run — a transient blip or a "
+                "rate limit that one retry would have absorbed goes straight "
+                "down the error path, or worse, straight through.",
+                "Decide which behaviour this step actually wants. For real "
+                "retries, set On Error to 'Stop Workflow' (or catch the "
+                "error output AFTER the retries are exhausted). For "
+                "continue-on-error, remove the retry setting so the config "
+                "stops claiming a resilience it does not have.",
+                step=step.name or step.type,
+                cost="Every transient failure is treated as final. Records "
+                     "that one retry would have saved are lost or sent down "
+                     "the error path, while the config says they were "
+                     "retried.")
+
+
+def _looks_like_n8n(wf: Workflow) -> bool:
+    """Does this workflow carry n8n's export shape?
+
+    n8n node types are namespaced ('n8n-nodes-base.httpRequest') and each
+    node carries a typeVersion. A GoHighLevel workflow has neither, which is
+    what keeps an n8n-only check from firing on every GHL export it reads.
+    """
+    return any("n8n-nodes" in s.type
+               or "typeversion" in {_nk(k) for k in s.raw}
+               for s in wf.steps)
+
+
+@rule("GHL043", "n8n workflow with no error workflow attached", "medium",
+      "routing", "reliability", "n8n")
+def n8n_without_error_workflow(acct: Account):
+    """An n8n workflow whose failures go nowhere.
+
+    n8n's error workflow — configured per workflow in Options -> Settings ->
+    Error workflow — is the platform's native failure sink: every failed
+    execution lands there with the workflow name, the failing node, the error
+    message and a clickable link to the failed run. One error workflow can be
+    reused across many workflows; that reuse is the whole point. A workflow
+    without one fails into the executions list, which nobody reads until a
+    client complains. Scoped to workflows that are identifiably n8n exports —
+    a GoHighLevel workflow has no such setting to check.
+    """
+    for wf in acct.workflows:
+        if not _looks_like_n8n(wf):
+            continue
+        attached = any("errorworkflow" in _nk(k) and str(v).strip()
+                       for k, v in wf.settings.items())
+        if attached:
+            continue
+        yield _finding(
+            "GHL043", "medium", wf,
+            "No error workflow set — failures land in a list nobody reads",
+            "This n8n workflow has no error workflow attached. When an "
+            "execution fails, the failure is recorded in the executions "
+            "list and nothing else happens: no alert, no log row, no "
+            "notification. The default state of an account like this is "
+            "that things have been broken for weeks and nobody knows — "
+            "monitoring is the layer that converts silent failures into "
+            "alerts, and this workflow does not have it.",
+            "Create one shared error workflow (Error Trigger -> append to a "
+            "failed-events table -> alert) and attach it to every workflow "
+            "in Options -> Settings -> Error workflow. The error payload "
+            "carries the failing node and a direct link to the execution, "
+            "so one listener covers the whole instance.",
+            cost="Failures are silent. The first person to find out an "
+                 "automation broke is the client, weeks later, asking where "
+                 "their leads went.")
+
+
+CONTACT_CREATE_TYPES = ("create_contact", "add_contact",
+                        "internal_create_contact")
+
+
+@rule("GHL044", "Contact created where an upsert belonged", "medium",
+      "routing", "reliability", "data")
+def create_where_upsert_belonged(acct: Account):
+    """A blind Create Contact — the classic duplicate-contact source.
+
+    The reliable pattern is to upsert against a stable identifier, never to
+    branch into separate create/update paths: a replayed webhook or a second
+    form fill then updates the existing record instead of minting a twin.
+    Duplicate contacts are the #1 visible symptom of a broken CRM automation
+    and the thing the client complains about first. Whether a GHL create is
+    deduplicated depends on the Location-level 'Allow Duplicate Contacts'
+    setting — configuration this export does not carry — so this is raised
+    as a duplicate risk to confirm, not a verdict.
+    """
+    for wf in acct.published():
+        for step in wf.steps_of(*CONTACT_CREATE_TYPES):
+            yield _finding(
+                "GHL044", "medium", wf,
+                "Create Contact used where an upsert would dedupe",
+                "This step creates a contact outright. Whether that mints a "
+                "duplicate depends on the sub-account's 'Allow Duplicate "
+                "Contacts' setting (Settings -> Business Profile -> Contact "
+                "Preferences) — with duplicates allowed, a replayed webhook, "
+                "a double-submitted form or the same lead arriving from two "
+                "sources creates a second record, and every conversation, "
+                "tag and opportunity splits across the twins. Webhooks are "
+                "at-least-once: duplicates are normal, not exceptional, and "
+                "a create is the one write that is never safe to run twice.",
+                "Use an upsert keyed on email or phone instead (the Upsert "
+                "Contact API follows the location's dedupe fields), and "
+                "confirm 'Allow Duplicate Contacts' is off unless it is "
+                "deliberately on. Where the record comes from an outside "
+                "system, store that system's ID in a custom field and match "
+                "on it first — it survives an email change; email-matching "
+                "alone does not.",
+                step=step.name or step.type,
+                cost="Duplicate contacts — the defect the client sees first "
+                     "and judges the whole build by. Two records for one "
+                     "person means two sequences, split history, and a rep "
+                     "working the wrong twin.")
+
+
+DEDUPE_HINT = re.compile(
+    r"event[_ -]?id|webhook[_ -]?id|message[_ -]?id|delivery[_ -]?id|"
+    r"last[_ -]?event|dedup|duplicate|idempoten|already[_ -]?processed", re.I)
+
+SIDE_EFFECT_TYPES = set(OPP_CREATE_TYPES) | set(CONTACT_CREATE_TYPES) | \
+    set(WEBHOOK_CALL_TYPES)
+
+
+@rule("GHL045", "Inbound webhook processed with no dedupe check", "high",
+      "routing", "reliability", "webhooks")
+def inbound_webhook_without_dedupe(acct: Account):
+    """An inbound-webhook workflow whose first act is a side effect.
+
+    Webhook delivery is at-least-once — the sender retries on any timeout,
+    so duplicates are normal, not exceptional. GHL's own integrator guidance
+    says to store webhook IDs to prevent duplicate processing and make the
+    processing idempotent. The Inbound Webhook trigger has no built-in
+    dedupe, so the guard has to be the workflow's first action: an If/Else
+    comparing the inbound event ID against a stored last_event_id, exiting
+    on a match. Without it, every redelivered event runs the whole workflow
+    again — two contacts, two opportunities, two SMS.
+    """
+    for wf in acct.published():
+        if not any("inbound" in t.type.lower() and "webhook" in t.type.lower()
+                   for t in wf.triggers):
+            continue
+        effect_at = next(
+            (i for i, s in enumerate(wf.steps)
+             if s.is_outbound or s.type in SIDE_EFFECT_TYPES
+             or s.tags_added()), None)
+        if effect_at is None:
+            continue
+        guarded = any(
+            s.is_branch and DEDUPE_HINT.search(s.name + " " + s.text())
+            for s in wf.steps[:effect_at])
+        if guarded:
+            continue
+        yield _finding(
+            "GHL045", "high", wf,
+            "Inbound webhook runs its side effects with no duplicate guard",
+            "This workflow triggers on an inbound webhook and its first "
+            "side effect runs with nothing checking whether the same event "
+            "was already processed. Webhook delivery is at-least-once: any "
+            "slow response makes the sender retry, and the retry carries "
+            "the same event. Each redelivery runs this workflow again — "
+            "duplicate records, duplicate messages, duplicate everything — "
+            "and HighLevel's own integration guidance is explicit that "
+            "duplicates are expected behaviour to be handled, not a bug.",
+            "Store the sender's event ID in a contact field (last_event_id) "
+            "and make the workflow's first step an If/Else: inbound ID "
+            "equals the stored one, exit; otherwise write it and continue. "
+            "Re-entry settings guard 'same contact, same funnel' — they do "
+            "not guard 'same event delivered twice', so this check is "
+            "needed even with re-entry off.",
+            cost="Every webhook retry doubles the work: two contacts, two "
+                 "opportunities, or the same SMS twice back to back. The "
+                 "sender's retries are routine, so this fires in normal "
+                 "operation, not just on a bad day.")
+
+
+ATTEMPT_HINT = re.compile(
+    r"attempt|retry[_ -]?count|retry[_ -]?number|tries|loop[_ -]?count|"
+    r"max[_ -]?retries", re.I)
+
+
+@rule("GHL046", "Retry loop with no attempt counter", "high", "routing",
+      "reliability", "loops")
+def retry_loop_without_a_bound(acct: Account):
+    """A Go-To loop with nothing counting the laps.
+
+    The GHL retry ladder is built with Wait + Go-To — and the poison-message
+    guard on it is an attempt_count field, incremented each lap, routing the
+    contact out to a dead-letter path at three. Without that counter, a
+    contact whose record can never succeed (a malformed phone number, a
+    payload the endpoint always rejects) laps the loop forever: bounded
+    retries are the difference between a retry policy and a runaway. The
+    same rule everywhere: limit total attempts, or one failing dependency
+    consumes the system.
+    """
+    for wf in acct.published():
+        gotos = [s for s in wf.steps if "goto" in _nk(s.type)]
+        if not gotos:
+            continue
+        blob = wf.text() + " " + " ".join(s.name for s in wf.steps)
+        if ATTEMPT_HINT.search(blob):
+            continue
+        yield _finding(
+            "GHL046", "high", wf,
+            "Go-To loop with nothing counting the attempts",
+            "This workflow jumps back with a Go-To and nothing in it tracks "
+            "how many laps a contact has taken. A contact who can never "
+            "succeed — a malformed number, a record the endpoint always "
+            "rejects — is a poison message: it loops forever, re-running "
+            "every step inside the loop on each lap, and no error is ever "
+            "raised because each individual lap looks like normal "
+            "execution.",
+            "Add an attempt_count custom field: set it from a computed "
+            "value on each lap (not a blind increment, so a replay cannot "
+            "corrupt it), and branch before the Go-To — at 3 attempts, "
+            "route the contact out of the loop to a failure path (tag, "
+            "notify, log) instead of around again.",
+            step=gotos[0].name or gotos[0].type,
+            cost="One bad record can loop indefinitely — burning sends, "
+                 "API calls and alert noise on every lap, forever, for a "
+                 "contact that was never going to succeed.")
+
+
+FIELD_WRITE_TYPE = re.compile(
+    r"update[_ -]?(contact[_ -]?)?field|update[_ -]?custom[_ -]?field|"
+    r"set[_ -]?(contact[_ -]?)?field|update[_ -]?contact$|edit[_ -]?field",
+    re.I)
+FIELD_KEY_NAMES = {"field", "fieldkey", "fieldid", "customfield",
+                   "customfieldid", "fieldname", "targetfield"}
+
+
+def _fields_written(step: Step) -> set[str]:
+    """The contact-field keys this step writes, merge tokens excluded."""
+    out: set[str] = set()
+    cfg = step.config()
+    if not isinstance(cfg, dict):
+        return out
+    for k, v in cfg.items():
+        if _nk(k) in FIELD_KEY_NAMES and isinstance(v, str) \
+                and v.strip() and "{{" not in v:
+            out.add(slug(v))
+        elif _nk(k) == "fields" and isinstance(v, dict):
+            out.update(slug(str(fk)) for fk in v if str(fk).strip())
+    return out
+
+
+@rule("GHL047", "Several workflows write the same contact field", "medium",
+      "routing", "reliability", "data")
+def multiple_field_writers(acct: Account):
+    """Two live workflows both writing one field — the classic GHL race.
+
+    Two workflows both allowed to update the same field, triggered by
+    near-simultaneous events, and the value ends up wrong some fraction of
+    the time — invisible until a report built on that field is wrong. The
+    fix is field-level ownership: one workflow owns each field, everything
+    else requests changes through it. Raised as a possible race, never a
+    confirmed one — mutually exclusive triggers can make two writers
+    legitimate, and that is not decidable from configuration.
+    """
+    writers: dict = {}
+    for wf in acct.published():
+        for step in wf.steps:
+            if not FIELD_WRITE_TYPE.search(step.type):
+                continue
+            for field_key in _fields_written(step):
+                writers.setdefault(field_key, {})[wf.name] = wf
+    for field_key in sorted(writers):
+        wfs = [writers[field_key][n] for n in sorted(writers[field_key])]
+        if len(wfs) < 2:
+            continue
+        names = ", ".join(w.name for w in wfs)
+        yield Finding(
+            rule="GHL047", severity="medium", workflow=wfs[0].name,
+            step=", ".join(w.name for w in wfs[1:]), category="routing",
+            reach=sum(len(w.outbound) for w in wfs),
+            title=f"{len(wfs)} workflows each write the field "
+                  f"'{field_key}'",
+            symptom=f"Each of these updates the same contact field: {names}. "
+                    "When two of them fire close together — a form submit "
+                    "and a booking landing in the same minute — the last "
+                    "write wins and the field ends up wrong some fraction "
+                    "of the time, with nothing logging that it happened. "
+                    "Every branch, report and automation keyed on this "
+                    "field inherits the error. If the triggers are "
+                    "genuinely mutually exclusive this is fine — it is "
+                    "raised as a possible race to confirm, not a verdict.",
+            fix="Give the field one owner: a single workflow performs every "
+                "write, and the others request the change (a tag the owner "
+                "listens for) instead of writing directly. One writer per "
+                "field turns a race into a queue.",
+            cost="The field is intermittently wrong, which is worse than "
+                 "always wrong — it passes every spot check and corrupts "
+                 "the occasional record where two events raced.")
+
+
+SCHEDULE_TRIGGER = ("schedule", "cron", "recurring")
+
+
+@rule("GHL048", "Scheduled workflow with no heartbeat", "medium", "hygiene",
+      "reliability", "monitoring")
+def scheduled_without_heartbeat(acct: Account):
+    """A scheduled run that nothing would miss.
+
+    The failure that beats all error monitoring is the workflow that did not
+    run at all: a trigger that stops firing produces zero errors, zero
+    failed runs and zero alerts. The guard is a dead-man's switch — every
+    scheduled workflow pings a monitor URL on each successful completion,
+    and the MONITOR alerts when the ping stops arriving. A scheduled
+    workflow with no outbound call anywhere cannot be pinging anything, so
+    its silence is undetectable by design. A workflow that does carry a
+    webhook call may already be heartbeating — whether that call is a
+    monitor is not knowable from the export, so those stay unflagged.
+    """
+    for wf in acct.published():
+        if not any(any(k in t.type.lower() for k in SCHEDULE_TRIGGER)
+                   for t in wf.triggers):
+            continue
+        if wf.steps_of(*WEBHOOK_CALL_TYPES):
+            continue
+        yield _finding(
+            "GHL048", "medium", wf,
+            "If this schedule stops running, nothing will ever say so",
+            "This workflow runs on a schedule and contains no outbound "
+            "call that could ping a monitor. A schedule that silently "
+            "stops — the trigger deleted, the workflow unpublished by "
+            "accident, the platform skipping it — produces no errors and "
+            "no failed executions, so error alerting cannot see it. "
+            "Whatever this run maintains (a sweep, a sync, a report) "
+            "degrades quietly from the day it stops, and the absence only "
+            "surfaces when someone notices stale output downstream.",
+            "Add a final webhook step that hits a heartbeat/cron-monitor "
+            "URL on every successful run, and have the monitor alert when "
+            "a ping misses its window. 'Did it run?' monitoring is "
+            "separate from 'did it error?' monitoring, and this is the "
+            "cheap end of it.",
+            cost="This workflow can be dead for weeks with zero errors "
+                 "logged. Whatever it was maintaining rots silently until "
+                 "a human notices the output went stale.")
+
+
+AI_STEP_TYPE = re.compile(
+    r"\bai\b|(^|[_-])ai($|[_-])|chatgpt|openai|\bgpt\b|gpt[_-]|claude|"
+    r"\bllm\b|anthropic", re.I)
+ENUM_KEYS = {"enum", "options", "choices", "categories", "allowedvalues",
+             "allowed", "labels", "buckets", "intents"}
+
+
+def _declares_enum(step: Step) -> bool:
+    """Does this AI step constrain its output to a fixed set of values?"""
+    found = [False]
+
+    def walk(node):
+        if found[0]:
+            return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if _nk(k) in ENUM_KEYS and isinstance(v, list) and v:
+                    found[0] = True
+                    return
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(step.config())
+    return found[0]
+
+
+@rule("GHL049", "AI output branched on without an enum constraint", "high",
+      "routing", "reliability", "ai")
+def ai_branch_without_enum(acct: Account):
+    """Routing on model prose instead of a fixed value set.
+
+    The rule: constrain any field you branch on with enums — never accept
+    free text for routing or classification. A classifier picks one of N
+    known values and its worst case is wrong routing; unconstrained output
+    drifts ('interested', 'Interested!', 'seems interested') and the branch
+    that matches none of it sends the contact down the else path silently.
+    The enum is also prompt-injection mitigation: a model that can only
+    emit one of six fixed values has no channel for an injected payload.
+    """
+    for wf in acct.published():
+        for i, step in enumerate(wf.steps):
+            if not AI_STEP_TYPE.search(step.type) \
+                    and not AI_STEP_TYPE.search(step.name):
+                continue
+            if not any(s.is_branch for s in wf.steps[i + 1:]):
+                continue
+            if _declares_enum(step):
+                continue
+            yield _finding(
+                "GHL049", "high", wf,
+                "A branch routes on AI output that nothing constrains",
+                "This AI step's output feeds a branch downstream, and the "
+                "step declares no fixed set of allowed values. Free-text "
+                "output drifts — 'interested', 'Interested!', 'the lead "
+                "seems interested' — and every variant the branch does not "
+                "literally match falls through to the else path with no "
+                "record of why. It is also the injection surface: an "
+                "inbound message that manipulates the model can steer "
+                "unconstrained output anywhere, where an enum of six known "
+                "values gives a payload no channel to travel in.",
+                "Constrain the step to a fixed value list (an enum of the "
+                "categories the branch actually routes on) and write the "
+                "result into a typed custom field the If/Else reads. The "
+                "AI decides WHICH path; the paths themselves stay "
+                "deterministic.",
+                step=step.name or step.type,
+                cost="Contacts route to the wrong path — or silently to no "
+                     "path — whenever the model phrases its answer a new "
+                     "way. The routing is only as stable as the model's "
+                     "mood, and nothing logs the misses.")
+
+
+AI_MERGE = re.compile(
+    r"\{\{\s*(ai|chatgpt|gpt|openai|assistant|llm)[._]", re.I)
+
+
+@rule("GHL050", "AI-generated text sent with no approval gate", "high",
+      "routing", "reliability", "ai")
+def ai_send_without_approval(acct: Account):
+    """Model output going straight to a customer.
+
+    The gate decision runs on irreversibility, blast radius and confidence
+    — any two elevated means add a gate. A customer-facing send of
+    generated text has the first two elevated by definition: a sent message
+    cannot be unsent, and it goes to a real customer. The approval must
+    live in the workflow layer — a manual/review step — because an AI that
+    decides for itself whether to ask permission has no gate at all. A
+    manual send step IS the gate (a human releases it), so only automatic
+    sends are flagged.
+    """
+    for wf in acct.published():
+        for step in wf.outbound:
+            if step.type.startswith("manual"):
+                continue  # a human releases it — that is the gate
+            body = step.bodies() or step.text()
+            if not AI_MERGE.search(body):
+                continue
+            yield _finding(
+                "GHL050", "high", wf,
+                "Generated text reaches the customer with no human gate",
+                "This step sends automatically and its body merges an AI "
+                "output field — whatever the model produced goes to the "
+                "contact verbatim. A generator's worst case is not wrong "
+                "routing, it is the company saying something it can never "
+                "take back: a hallucinated discount, a made-up policy, a "
+                "reply steered by a hostile inbound message. Sending is "
+                "irreversible and customer-facing — two elevated risk "
+                "factors, which is the threshold where an approval gate "
+                "stops being optional.",
+                "Route the draft through a human: make the send a manual "
+                "step a person releases, or have the AI classify instead "
+                "and send a human-written template per category — the AI "
+                "decides which path, a human wrote every word that goes "
+                "out. Enforce the gate in the workflow layer, not in the "
+                "prompt.",
+                step=step.name or step.type,
+                cost="One hallucinated sentence to one customer — a price, "
+                     "a promise, a policy — costs more than the automation "
+                     "saves, and it cannot be recalled once sent.")
+
+
+LEGACY_SIG = "x-wh-signature"
+CURRENT_SIG = "x-ghl-signature"
+
+
+def _sig_mentions(blob: str) -> tuple[bool, bool]:
+    low = blob.lower()
+    return LEGACY_SIG in low, CURRENT_SIG in low
+
+
+@rule("GHL051", "Legacy webhook signature — dead on September 1, 2026",
+      "critical", "hygiene", "reliability", "webhooks", "deadline")
+def legacy_signature_header(acct: Account):
+    """An integration still verifying only the RSA X-WH-Signature header.
+
+    GHL marketplace webhooks carry two authentication headers: X-GHL-
+    Signature (Ed25519, the current standard) and X-WH-Signature (RSA,
+    legacy) — and the legacy header is deprecated September 1, 2026. Any
+    integration verifying only X-WH-Signature stops authenticating GHL's
+    webhooks on that date: a dated, externally imposed, checkable deadline,
+    which makes this the highest-conviction finding an audit can produce.
+    Mentions of both headers together read as a migration already in hand
+    and are left alone.
+    """
+    for wf in acct.workflows:
+        blob = json.dumps([s.raw for s in wf.steps]
+                          + [t.raw for t in wf.triggers])
+        legacy, current = _sig_mentions(blob)
+        if not legacy or current:
+            continue
+        yield _finding(
+            "GHL051", "critical", wf,
+            "References the X-WH-Signature header, which dies Sep 1, 2026",
+            "This workflow references the legacy RSA X-WH-Signature webhook "
+            "header and nowhere mentions its replacement. HighLevel has "
+            "deprecated X-WH-Signature effective September 1, 2026 — after "
+            "that date an integration verifying only the legacy header "
+            "stops authenticating GHL's webhooks entirely. This is not a "
+            "drifting best practice, it is a fixed external deadline: the "
+            "break is scheduled, and it lands whether or not anyone is "
+            "watching.",
+            "Migrate the verification to the X-GHL-Signature header "
+            "(Ed25519 — verified with GHL's public key, not a shared "
+            "secret) before September 1, 2026, and keep accepting the "
+            "legacy header only until the switchover is confirmed working.",
+            cost="On September 1, 2026 this integration stops trusting "
+                 "every webhook GHL sends it. Scheduled breakage, known "
+                 "date, and the fix is cheap now and an outage later.")
+
+    legacy_cvs = [name for name, value in acct.custom_values.items()
+                  if LEGACY_SIG in str(value).lower()
+                  or LEGACY_SIG in str(name).lower()]
+    if legacy_cvs:
+        all_blob = json.dumps(acct.custom_values)
+        _, current_anywhere = _sig_mentions(all_blob)
+        if not current_anywhere:
+            yield Finding(
+                rule="GHL051", severity="critical", workflow="(custom values)",
+                step=", ".join(sorted(legacy_cvs)), category="hygiene",
+                reach=2,
+                title="Custom value references the X-WH-Signature header, "
+                      "which dies Sep 1, 2026",
+                symptom="An account custom value references the legacy RSA "
+                        "X-WH-Signature webhook header, with no mention of "
+                        "the Ed25519 X-GHL-Signature replacement anywhere in "
+                        "the custom values. HighLevel deprecates the legacy "
+                        "header on September 1, 2026 — whatever integration "
+                        "consumes this value stops authenticating GHL "
+                        "webhooks on that date.",
+                fix="Migrate the consuming integration to X-GHL-Signature "
+                    "(Ed25519, verified with GHL's public key) before "
+                    "September 1, 2026, then update or retire this value.",
+                cost="A scheduled outage with a published date. Cheap to fix "
+                     "this week, an incident on the first of September.")
+
+
+RESPONSE_CODE_KEYS = {"responsecode", "statuscode", "responsestatus",
+                      "responsestatuscode", "errorstatuscode",
+                      "errorresponsecode", "replystatuscode", "httpstatus"}
+NON_2XX = re.compile(r"^\s*[45]\d\d\s*$")
+
+
+@rule("GHL052", "Webhook handler answers a bad record with an error code",
+      "medium", "routing", "reliability", "webhooks")
+def non_2xx_on_bad_record(acct: Account):
+    """A declared 4xx/5xx response — which guarantees redelivery.
+
+    GHL marketplace webhooks retry on ANYTHING that is not 2xx — all 3xx,
+    4xx, 5xx, timeouts included — up to 12 times with backoff, and the
+    vendor's own instruction is to return 200 even for processing errors,
+    reserving error codes for genuine infrastructure failure. A handler
+    that answers a malformed record with 500 therefore orders 12 "
+    redeliveries of the exact payload that just failed: the poison message
+    is retried into every one of them. Ack it, then dead-letter it.
+    """
+    for wf in acct.published():
+        for step in wf.steps:
+            cfg = step.config()
+            if not isinstance(cfg, dict):
+                continue
+            for k, v in cfg.items():
+                if _nk(k) not in RESPONSE_CODE_KEYS:
+                    continue
+                if not NON_2XX.match(str(v)):
+                    continue
+                yield _finding(
+                    "GHL052", "medium", wf,
+                    f"Responds {str(v).strip()} to a bad record — which "
+                    "orders it redelivered",
+                    "This step answers with a non-2xx status. GHL "
+                    "marketplace webhooks redeliver on anything that is "
+                    "not 2xx — up to 12 retries with backoff — so an "
+                    "error code returned for a bad RECORD (malformed "
+                    "payload, missing field) makes the sender redeliver "
+                    "that same poison message every time, burning the "
+                    "retry budget on a record that can never succeed and "
+                    "masking real deliveries behind the noise.",
+                    "Return 200 for anything you received and could not "
+                    "process, and park the bad record in a failed-events "
+                    "table (a DLQ) with the error message for replay "
+                    "after the fix. Reserve non-2xx for genuine "
+                    "infrastructure failure — the endpoint itself being "
+                    "unable to take the request.",
+                    step=step.name or step.type,
+                    cost="Every malformed record arrives 13 times instead "
+                         "of once, and each arrival re-runs whatever side "
+                         "effects sit before the failure.")
+                break
+
+
 def run(acct: Account, min_severity: str = "low",
         only: Iterable[str] | None = None) -> list[Finding]:
     """Run the catalog. Returns findings sorted most severe first."""
