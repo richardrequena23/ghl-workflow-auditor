@@ -2739,6 +2739,18 @@ ATTEMPT_HINT = re.compile(
     r"attempt|retry[_ -]?count|retry[_ -]?number|tries|loop[_ -]?count|"
     r"max[_ -]?retries", re.I)
 
+# A goto/jump construct IS the whole step type: nothing follows the "to"
+# except an optional structural suffix. A substring match on "goto" tripped
+# on n8n's `n8n-nodes-base.goToWebinar` — a product name, not a loop — so
+# the leaf of the (possibly namespaced) type must match exactly.
+GOTO_TYPE = re.compile(
+    r"^go[\-_ ]?to(?:[\-_ ]?(?:step|action|node|event|workflow))?$", re.I)
+
+
+def _is_goto(step_type: str) -> bool:
+    leaf = re.split(r"[./:]", str(step_type or ""))[-1].strip()
+    return bool(GOTO_TYPE.match(leaf))
+
 
 @rule("GHL046", "Retry loop with no attempt counter", "high", "routing",
       "reliability", "loops")
@@ -2755,7 +2767,7 @@ def retry_loop_without_a_bound(acct: Account):
     consumes the system.
     """
     for wf in acct.published():
-        gotos = [s for s in wf.steps if "goto" in _nk(s.type)]
+        gotos = [s for s in wf.steps if _is_goto(s.type)]
         if not gotos:
             continue
         blob = wf.text() + " " + " ".join(s.name for s in wf.steps)
@@ -3103,6 +3115,30 @@ RESPONSE_CODE_KEYS = {"responsecode", "statuscode", "responsestatus",
 NON_2XX = re.compile(r"^\s*[45]\d\d\s*$")
 
 
+def _declared_response_codes(cfg) -> list:
+    """(key, value) pairs anywhere in the config whose key is response-code
+    shaped. Exports nest these: n8n's respondToWebhook writes the code at
+    `parameters.options.responseCode`, one level below where a flat
+    `.items()` scan looks — 41 corpus workflows carried non-2xx codes there
+    and were invisible to a top-level-only read."""
+    hits: list = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if _nk(k) in RESPONSE_CODE_KEYS \
+                        and isinstance(v, (str, int, float)):
+                    hits.append((k, v))
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(cfg)
+    return hits
+
+
 @rule("GHL052", "Webhook handler answers a bad record with an error code",
       "medium", "routing", "reliability", "webhooks")
 def non_2xx_on_bad_record(acct: Account):
@@ -3121,9 +3157,7 @@ def non_2xx_on_bad_record(acct: Account):
             cfg = step.config()
             if not isinstance(cfg, dict):
                 continue
-            for k, v in cfg.items():
-                if _nk(k) not in RESPONSE_CODE_KEYS:
-                    continue
+            for k, v in _declared_response_codes(cfg):
                 if not NON_2XX.match(str(v)):
                     continue
                 yield _finding(

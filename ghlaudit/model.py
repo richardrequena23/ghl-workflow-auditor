@@ -177,8 +177,8 @@ class Step:
 
     def config(self) -> dict:
         """The step's settings, wherever this export decided to hide them."""
-        for key in ("meta", "data", "config", "settings", "params", "extra",
-                    "attributes"):
+        for key in ("meta", "data", "config", "settings", "params",
+                    "parameters", "extra", "attributes"):
             sub = self.raw.get(key)
             if isinstance(sub, dict):
                 return sub
