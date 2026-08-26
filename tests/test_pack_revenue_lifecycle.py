@@ -264,13 +264,50 @@ class ConversionExit(unittest.TestCase):
         self.assertIn("GHL096", rules_hit([self.cadence(name="Enquiry Handling",
                                                         steps=steps)]))
 
-    def test_an_account_wide_guard_downgrades_it(self):
+    def test_a_guard_that_names_this_cadence_clears_it_entirely(self):
+        """The guard's remove step NAMES its targets, so coverage is a fact.
+
+        This used to report `low` — "confirm this cadence is in its remove
+        list" — on every cadence in an account that had a guard, including ones
+        the guard demonstrably did remove. Handing the reader a question the
+        file already answers is how a report loses credibility.
+        """
         guard = wf("Booked - Clean Up", [
             {"type": "remove_from_workflow", "name": "Pull from cadences",
              "meta": {"workflowId": "Lead Nurture"}}],
             [{"type": "appointment_booked", "name": "Booked", "filters": []}])
+        self.assertNotIn("GHL096", rules_hit([self.cadence(), guard]))
+
+    def test_a_guard_that_misses_this_cadence_is_high(self):
+        """The defect worth finding: an account that looks like it handles
+        conversions, and does — everywhere except here."""
+        guard = wf("Booked - Clean Up", [
+            {"type": "remove_from_workflow", "name": "Pull from cadences",
+             "meta": {"workflowId": "Some Other Cadence"}}],
+            [{"type": "appointment_booked", "name": "Booked", "filters": []}])
         found = findings_for("GHL096", [self.cadence(), guard])
-        self.assertEqual([f.severity for f in found], ["low"])
+        self.assertEqual([f.severity for f in found], ["high"])
+        self.assertIn("Booked - Clean Up", found[0].title)
+
+    def test_the_guard_is_never_a_cancellation_workflow(self):
+        """`appointment_status` matches a cancellation as readily as a booking.
+
+        Taking the first match in export order named "Appointment Cancelled -
+        Clean Up" as the workflow that handles sales on a real account, purely
+        because it sorts first alphabetically.
+        """
+        cancel = wf("Appointment Cancelled - Clean Up", [
+            {"type": "remove_from_workflow", "name": "Pull",
+             "meta": {"workflowId": "Lead Nurture"}}],
+            [{"type": "appointment_status", "name": "Cancelled", "filters": []}])
+        booked = wf("Strategy Call - Booking", [
+            {"type": "remove_from_workflow", "name": "Pull",
+             "meta": {"workflowId": "Some Other Cadence"}}],
+            [{"type": "appointment_booked", "name": "Booked", "filters": []}])
+        found = findings_for("GHL096", [self.cadence(), cancel, booked])
+        self.assertEqual(len(found), 1)
+        self.assertIn("Strategy Call - Booking", found[0].title)
+        self.assertNotIn("Cancelled", found[0].title)
 
     def test_drafts_are_not_audited(self):
         cadence = self.cadence()

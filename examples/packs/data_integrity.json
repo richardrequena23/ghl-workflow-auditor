@@ -22,8 +22,8 @@
         },
         {
           "type": "update_contact_field",
-          "name": "Record how they found us",
-          "meta": {"field": "di_intake_channel", "value": "web-form"}
+          "name": "Store the callback time they asked for",
+          "meta": {"field": "di_preferred_time", "value": "weekday mornings"}
         },
         {
           "type": "update_contact_field",
@@ -126,7 +126,7 @@
     }
   ],
   "customFields": [
-    {"fieldKey": "contact.di_intake_channel", "name": "Intake Channel"},
+    {"fieldKey": "contact.di_preferred_time", "name": "Preferred Time"},
     {"fieldKey": "contact.di_lead_stage", "name": "Lead Stage"},
     {"fieldKey": "contact.follow_up_date", "name": "Follow Up Date"},
     {"fieldKey": "contact.deal_amount", "name": "Deal Amount"}

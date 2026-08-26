@@ -82,7 +82,7 @@ The health score is graded on these five axes, so a category with no findings is
 | [GHL051](#ghl051) | critical | Legacy webhook signature — dead on September 1, 2026 |
 | [GHL052](#ghl052) | medium | Webhook handler answers a bad record with an error code |
 | [GHL053](#ghl053) | high | SMS to a list with no opt-in check |
-| [GHL054](#ghl054) | critical | Send window opens or closes outside the legal hours |
+| [GHL054](#ghl054) | critical | Send window bounds sit outside safe texting hours |
 | [GHL055](#ghl055) | high | Reply keyword does not do what the message says |
 | [GHL056](#ghl056) | high | Carrier-restricted content in a text |
 | [GHL057](#ghl057) | medium | First text never says who is sending it |
@@ -138,11 +138,11 @@ What the law and the carriers require of you. These are the findings that carry 
 
 ### GHL054
 
-**Send window opens or closes outside the legal hours** — `critical` · tags: `compliance`, `timing`, `sms`
+**Send window bounds sit outside safe texting hours** — `critical` · tags: `compliance`, `timing`, `sms`
 
 *What it looks like:* The TCPA bans telemarketing calls and texts before 8am and after 9pm in the recipient's own local time, and this window is set outside those hours. The workflow will do exactly what it was configured to do — hold each message until the window opens, then send it at an hour that is not lawful to send at. Damages are statutory and counted per message, so the exposure scales with the size of the list, not with the size of the mistake.
 
-*The fix:* Narrow the window to 8am-9pm at the widest, and 9am-8pm if the list is nationwide — Florida and several other states stop at 8pm, and the strictest state on your list sets the real limit. Confirm the same screen has the window running in the CONTACT's timezone, not the account's: correct bounds on the wrong clock breach the statute just as reliably.
+*The fix:* Narrow the window to 8am-9pm at the widest, and 9am-8pm if the list is nationwide — Florida, Oklahoma and several other states stop at 8pm, and the strictest state on your list sets the real limit. Confirm the same screen has the window running in the CONTACT's timezone, not the account's: correct bounds on the wrong clock breach the statute just as reliably.
 
 *What it costs:* Every message sent outside these hours is its own claim, at statutory damages per text, on top of the opt-outs and complaints that get the number filtered.
 
@@ -988,7 +988,7 @@ Content and maintainability — placeholders, blank merge fields, references to 
 
 **Field written with a value its type cannot hold** — `high` · tags: `data`
 
-*What it looks like:* The field's name says it holds a number, and this step writes a value that merges {{ contact.company_name }}, which holds text. A typed field refuses what it cannot parse and refuses it quietly — no error, no failed step — so the field ends up empty or holding text nothing can compare. Every later step that reads it then behaves as if the contact has no number at all: the branch comparing it against a threshold never matches, the filter finds nobody, the report cell is blank. If this field is actually a text field the data is not lost, only unsortable and unreportable.
+*What it looks like:* The field's name says it holds a number, and this step writes a value that merges {{ contact.company_name }}, which holds text. A typed field refuses what it cannot parse and refuses it quietly — no error, no failed step — so the field ends up empty or holding text nothing can compare. Every later step that reads it then behaves as if the contact has no number at all: the branch comparing it against a threshold never matches, the filter finds nobody, the report cell is blank. This one is the wrong value whatever the field's type turns out to be.
 
 *The fix:* Write a real number: send the numeric value on its own, with no currency symbol, units or words attached. Then open a contact that ran through this step and confirm the field is populated, not blank.
 
@@ -1048,9 +1048,9 @@ Content and maintainability — placeholders, blank merge fields, references to 
 
 **Tag name built from a merge field** — `medium` · tags: `data`, `tags`
 
-*What it looks like:* This step applies a tag whose name is built from contact data, so it is a different tag for every contact who reaches it. Either the account accumulates one tag per person — after a few thousand contacts the tag list is unusable, and nobody can safely delete any of it because no one knows what still references what — or the merge field is not resolved there and everybody gets one tag named with the raw template text. Either way the segment this was meant to create does not exist.
+*What it looks like:* This step applies a tag whose name is built from contact data, so the tag is different for every distinct value that field holds. It is merging something close to unique per person (a name, an email, a town, a date), so the account accumulates roughly one tag per contact: after a few thousand of them the tag picker, the filters and every smart list built on tags stop being usable, and nobody can safely delete any of it because no one knows what still references what. The other possibility is that the merge field is not resolved in a tag name at all, and every contact ends up with one tag named with the raw template text — in which case the segment this was meant to create does not exist.
 
-*The fix:* Apply a tag from a fixed list (the handful of segments you actually filter on) and write the varying value into a custom field instead. Fields are what filters, smart lists and reports are built on; tags are for membership, not for storing data.
+*The fix:* Open the contact record of somebody who ran through this step and read the tag that landed. If it is the raw template text, or if the merged field is free text, apply a tag from a fixed list instead and write the varying value into a custom field. Fields are what filters, smart lists and reports are built on; tags are for membership, not for storing data.
 
 *What it costs:* Tag lists do not recover. Once thousands of one-contact tags exist, every bulk action and smart list built on tags is guesswork, and cleaning it up costs more than the build did.
 
@@ -1098,7 +1098,7 @@ Content and maintainability — placeholders, blank merge fields, references to 
 
 **Custom field written that nothing in the account reads** — `low` · tags: `data`, `dead_weight`
 
-*What it looks like:* This workflow writes the custom field 'Intake Channel' and nothing else in the account — no message, no trigger filter, no condition, no other field — ever reads it back. If a smart list, a report or an outside system consumes it, this is fine and worth noting in the build docs. If not, the field is data collection nobody acts on: the real cost is that the team believes the answer is being used, so nobody notices the follow-up it was meant to drive does not exist.
+*What it looks like:* This workflow writes the custom field 'Preferred Time' and nothing else in the account — no message, no trigger filter, no condition, no other field — ever reads it back. If a smart list, a report or an outside system consumes it, this is fine and worth noting in the build docs. If not, the field is data collection nobody acts on: the real cost is that the team believes the answer is being used, so nobody notices the follow-up it was meant to drive does not exist.
 
 *The fix:* Confirm who reads it. If the answer is nobody, delete the write step and the question that feeds it; if it feeds a report or an external sync, say so in the field's description so the next person does not delete it.
 

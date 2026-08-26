@@ -70,6 +70,28 @@ def write(field, value, name="Update field", type="update_contact_field"):
     return {"type": type, "name": name, "meta": {"field": field, "value": value}}
 
 
+def live_write(title, value, name, step_id=None, nxt=None,
+               field_id="tqcNZQbMZYhmYwFdRrLd"):
+    """A field write in the shape a REAL GoHighLevel export writes it.
+
+    The `field` key holds the custom field's opaque ID, the readable name is
+    only in `title`, and `type` is the builder's input hint rather than the
+    field's data type. Every one of those cost this pack a check: reading
+    `field` as the key made four of the six blind to every write in a live
+    account, and reading `type` as the data type would have been a guess.
+    """
+    step = {"name": name, "type": "update_contact_field",
+            "attributes": {"type": "update_contact_field",
+                           "actionType": "update_field_data",
+                           "fields": [{"field": field_id, "value": value,
+                                       "title": title, "type": "string"}]}}
+    if step_id:
+        step["id"] = step_id
+    if nxt:
+        step["next"] = nxt
+    return step
+
+
 def tag(value, name="Tag", type="add_contact_tag"):
     return {"type": type, "name": name, "meta": {"tag": value}}
 
@@ -286,24 +308,24 @@ class DeadFieldWrites(unittest.TestCase):
     """GHL074 — data collected that nothing consumes."""
 
     def test_a_field_nobody_reads_fires(self):
-        hits = rules_hit([wf("Intake", [write("intake_channel", "web")])],
-                         customFields=fields("intake_channel"))
+        hits = rules_hit([wf("Intake", [write("preferred_time", "mornings")])],
+                         customFields=fields("preferred_time"))
         self.assertIn("GHL074", hits)
 
     def test_a_field_read_in_a_message_passes(self):
-        steps = [write("intake_channel", "web"),
-                 sms("Recap", "You came in via {{ contact.intake_channel }}")]
+        steps = [write("preferred_time", "mornings"),
+                 sms("Recap", "We will ring you {{ contact.preferred_time }}")]
         hits = rules_hit([wf("Intake", steps)],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_a_field_read_by_a_trigger_filter_passes(self):
         listener = wf("Router", [sms()], [
             {"type": "contact_changed", "name": "Channel set",
-             "filters": [{"field": "intake_channel", "value": "web"}]}])
-        hits = rules_hit([wf("Intake", [write("intake_channel", "web")]),
+             "filters": [{"field": "preferred_time", "value": "mornings"}]}])
+        hits = rules_hit([wf("Intake", [write("preferred_time", "mornings")]),
                           listener],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_a_trigger_that_names_the_field_outside_filters_passes(self):
@@ -314,10 +336,10 @@ class DeadFieldWrites(unittest.TestCase):
         """
         listener = wf("Router", [sms()],
                       [{"type": "contact_changed", "name": "Channel set",
-                        "meta": {"field": "intake_channel"}}])
-        hits = rules_hit([wf("Intake", [write("intake_channel", "web")]),
+                        "meta": {"field": "preferred_time"}}])
+        hits = rules_hit([wf("Intake", [write("preferred_time", "mornings")]),
                           listener],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_a_field_read_inside_another_write_passes(self):
@@ -326,53 +348,53 @@ class DeadFieldWrites(unittest.TestCase):
         The summary field it is copied INTO is itself unread here, so the rule
         is expected to report that one and only that one.
         """
-        steps = [write("intake_channel", "web"),
-                 write("lead_summary", "came in via {{ contact.intake_channel }}",
+        steps = [write("preferred_time", "mornings"),
+                 write("lead_summary", "prefers {{ contact.preferred_time }}",
                        name="Build summary")]
         found = findings_for("GHL074", [wf("Intake", steps)],
-                             customFields=fields("intake_channel", "lead_summary"))
+                             customFields=fields("preferred_time", "lead_summary"))
         self.assertEqual([f.step for f in found], ["Build summary"])
 
     def test_a_source_field_named_beside_the_target_counts_as_a_read(self):
         steps = [{"type": "update_contact_field", "name": "Copy it across",
                   "meta": {"field": "lead_summary", "value": "x",
-                           "sourceField": "contact.intake_channel"}}]
+                           "sourceField": "contact.preferred_time"}}]
         found = findings_for("GHL074",
-                             [wf("Intake", [write("intake_channel", "web")]),
+                             [wf("Intake", [write("preferred_time", "mornings")]),
                               wf("Copy", steps)],
-                             customFields=fields("intake_channel",
+                             customFields=fields("preferred_time",
                                                  "lead_summary"))
         self.assertEqual([f.step for f in found], ["Copy it across"])
 
     def test_a_field_read_by_a_custom_value_passes(self):
-        hits = rules_hit([wf("Intake", [write("intake_channel", "web")])],
-                         customValues={"Recap": "came in via "
-                                                "{{ contact.intake_channel }}"},
-                         customFields=fields("intake_channel"))
+        hits = rules_hit([wf("Intake", [write("preferred_time", "mornings")])],
+                         customValues={"Recap": "prefers "
+                                                "{{ contact.preferred_time }}"},
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_a_field_read_by_a_draft_workflow_passes(self):
         """A paused build that reads it means the data is early, not dead."""
-        reader = wf("Paused", [sms("Recap", "{{ contact.intake_channel }}")],
+        reader = wf("Paused", [sms("Recap", "{{ contact.preferred_time }}")],
                     status="draft")
-        hits = rules_hit([wf("Intake", [write("intake_channel", "web")]),
+        hits = rules_hit([wf("Intake", [write("preferred_time", "mornings")]),
                           reader],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_a_field_whose_name_prefixes_another_stays_quiet(self):
         """The blob is slugged, so every separator in it is an underscore.
 
-        That makes 'intake_channel' inside 'intake_channel_history' look like a
+        That makes 'preferred_time' inside 'preferred_time_history' look like a
         read of the shorter field, and this check declines rather than risk the
         opposite: treating the underscore as a boundary would stop
-        '{{ contact.intake_channel }}' in a message from counting at all, and
+        '{{ contact.preferred_time }}' in a message from counting at all, and
         report a field the account reads every day as dead.
         """
-        steps = [write("intake_channel", "web"),
-                 sms("Recap", "see {{ contact.intake_channel_history }}")]
+        steps = [write("preferred_time", "mornings"),
+                 sms("Recap", "see {{ contact.preferred_time_history }}")]
         hits = rules_hit([wf("Intake", steps)],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_consent_evidence_is_not_dead_data(self):
@@ -390,31 +412,31 @@ class DeadFieldWrites(unittest.TestCase):
 
     def test_a_standard_field_is_never_dead(self):
         hits = rules_hit([wf("Intake", [write("first_name", "there")])],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_a_key_the_account_does_not_have_is_left_to_ghl023(self):
-        hits = rules_hit([wf("Intake", [write("mispelt_channel", "web")])],
-                         customFields=fields("intake_channel"))
+        hits = rules_hit([wf("Intake", [write("prefered_time", "mornings")])],
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_no_custom_field_list_skips_instead_of_guessing(self):
-        workflows = [wf("Intake", [write("intake_channel", "web")])]
+        workflows = [wf("Intake", [write("preferred_time", "mornings")])]
         self.assertIn("GHL074", skips_hit(workflows))
         self.assertNotIn("GHL074", rules_hit(workflows))
 
     def test_the_skip_names_what_would_let_it_run(self):
-        _, skips = audit_all([wf("Intake", [write("intake_channel", "web")])])
+        _, skips = audit_all([wf("Intake", [write("preferred_time", "mornings")])])
         mine = [s for s in skips if s.rule == "GHL074"]
         self.assertEqual(len(mine), 1)
         self.assertIn("customFields", mine[0].needs)
 
     def test_the_finding_uses_the_fields_display_name(self):
         found = findings_for("GHL074",
-                             [wf("Intake", [write("intake_channel", "web")])],
-                             customFields=fields("intake_channel"))
+                             [wf("Intake", [write("preferred_time", "mornings")])],
+                             customFields=fields("preferred_time"))
         self.assertEqual(len(found), 1)
-        self.assertIn("Intake Channel", found[0].title)
+        self.assertIn("Preferred Time", found[0].title)
 
 
 class TypeMismatch(unittest.TestCase):
@@ -559,11 +581,55 @@ class OverwrittenBeforeAnythingReadsIt(unittest.TestCase):
                  write("lead_stage", "cold", name="Two")]
         self.assertNotIn("GHL076", rules_hit([wf("Routing", steps)]))
 
-    def test_a_wired_export_is_not_read_in_file_order(self):
-        """With ids and links the flat order proves nothing about the run."""
+    def test_a_wired_export_is_read_through_its_links(self):
+        """A real export is a linked list, and the link is the proof.
+
+        Flat file order proves nothing about a wired export, so this used to
+        decline them all — which meant declining every export a real
+        GoHighLevel account produces. The link does prove it: one successor,
+        no fork, so the second write always runs straight after the first.
+        """
         steps = [dict(write("lead_stage", "hot", name="One"), id="a", next="b"),
                  dict(write("lead_stage", "cold", name="Two"), id="b")]
+        self.assertIn("GHL076", rules_hit([wf("Routing", steps)]))
+
+    def test_a_wired_fork_is_not_a_sequence(self):
+        """Five branch arms writing one field are one decision, not five.
+
+        This is the shape the live account ships: an if/else whose `next` is a
+        list of arm ids, each arm setting the same attribution field to its
+        own value. In file order they look like overwrites of each other.
+        """
+        steps = [{"type": "if_else", "name": "Where from?", "id": "fork",
+                  "next": ["armA", "armB"]},
+                 dict(write("lead_stage", "hot", name="A"), id="armA",
+                      parentKey="fork"),
+                 dict(write("lead_stage", "cold", name="B"), id="armB",
+                      parentKey="fork")]
         self.assertNotIn("GHL076", rules_hit([wf("Routing", steps)]))
+
+    def test_a_wired_wait_between_two_writes_is_still_a_design(self):
+        steps = [dict(write("lead_stage", "in-sequence", name="One"),
+                      id="a", next="b"),
+                 dict(wait(), id="b", next="c"),
+                 dict(write("lead_stage", "no-reply", name="Two"), id="c")]
+        self.assertNotIn("GHL076", rules_hit([wf("Nurture", steps)]))
+
+    def test_a_wired_chain_that_links_back_does_not_hang(self):
+        """A link back on itself is malformed, not an excuse to loop."""
+        steps = [dict(write("lead_stage", "hot", name="One"), id="a", next="b"),
+                 dict(write("lead_stage", "cold", name="Two"), id="b",
+                      next="a")]
+        rules_hit([wf("Routing", steps)])
+
+    def test_the_real_export_field_write_shape_is_read(self):
+        """GoHighLevel writes the field ID, and the name only in `title`."""
+        found = findings_for("GHL076", [wf("Routing", [
+            live_write("Lead Stage", "new-enquiry", "One", "a", "b"),
+            live_write("Lead Stage", "contacted", "Two", "b")])])
+        self.assertEqual(len(found), 1)
+        self.assertIn("lead_stage", found[0].title)
+        self.assertNotIn("tqcNZQbMZYhmYwFdRrLd", found[0].title)
 
     def test_the_same_value_twice_is_a_duplicate_not_a_contradiction(self):
         steps = [write("lead_stage", "hot", name="One"),
@@ -668,10 +734,10 @@ class Robustness(unittest.TestCase):
     def test_a_trigger_whose_filters_are_not_a_list_is_still_read(self):
         """The read check searches the whole trigger, not one blessed key."""
         listener = {"type": "contact_changed", "name": "Watch",
-                    "filters": "intake_channel is set"}
-        hits = rules_hit([wf("Intake", [write("intake_channel", "web")]),
+                    "filters": "preferred_time is set"}
+        hits = rules_hit([wf("Intake", [write("preferred_time", "mornings")]),
                           wf("Router", [sms()], [listener])],
-                         customFields=fields("intake_channel"))
+                         customFields=fields("preferred_time"))
         self.assertNotIn("GHL074", hits)
 
     def test_nested_value_objects_are_read(self):

@@ -16,6 +16,16 @@ not guess at it. Cross-workflow frequency — the contact enrolled in four
 sequences at once — is not decidable either: two triggers may never both fire
 for the same contact, and configuration does not say which. GHL058 checks the
 half that IS decidable, inside a single workflow, and says so in its wording.
+
+One structural fact governs three of these rules. GoHighLevel's advanced builder
+exports every node of a branching workflow into ONE flat list, in depth-first
+order, with the tree recorded in `parentKey`. So position in that list is not
+the order a contact experiences: step 11 can be the fourth node of the third
+branch, and steps 11, 15 and 19 can be three messages only one of which will
+ever send. Reading the flat list as a journey is how a rule about the FIRST
+message ends up firing on a mid-sequence nudge, and how a rule about three texts
+in a day ends up counting three mutually exclusive ones. `_linear_paths` and
+`_trunk` rebuild the real paths from `parentKey` before either rule reads them.
 """
 
 from __future__ import annotations
@@ -29,6 +39,135 @@ from ..rules import _finding, rule
 
 def _nk(key) -> str:
     return re.sub(r"[^a-z]", "", str(key).lower())
+
+
+# --------------------------------------------------------------------------
+# Reading a branching workflow as the paths a contact can actually take
+# --------------------------------------------------------------------------
+
+# Guards. A path walk over an export nobody has validated is the one place in
+# this pack that could hang or blow the stack, and a rule that crashes takes the
+# other ninety-nine checks down with it.
+PATH_CAP = 64      # distinct root-to-leaf chains explored per workflow
+STEP_CAP = 2000    # above this, do not walk the tree at all
+
+
+def _forks(step: Step) -> bool:
+    """Does this step hand the contact to one of several different paths?
+
+    An if/else is the obvious one. `transition` is the other: GoHighLevel's
+    multi-path wait writes its 'Replied' / 'No reply' outcomes as transition
+    nodes, and those are a fork by any other name.
+    """
+    return step.is_branch or "transition" in _nk(step.type)
+
+
+def _wiring(wf: Workflow):
+    """(children by parent id, root steps), or None when the export has no tree.
+
+    `parentKey` is written either as the parent's bare id or as
+    `<parentId>-<branchName>`, so resolving it is a prefix match, never an
+    equality test.
+    """
+    by_id = {}
+    for step in wf.steps:
+        sid = step.step_id
+        if sid and sid not in by_id:
+            by_id[sid] = step
+    if not by_id:
+        return None
+    # `<parentId>-<branchName>` is resolved by trying every id LENGTH present
+    # rather than every id: scanning the ids themselves is quadratic, and an
+    # export where nothing resolves is exactly the export that would pay for
+    # it. Ids in one export are uniform (uuids), so this is one or two probes.
+    lengths = sorted({len(sid) for sid in by_id})
+    kids: dict = {}
+    roots: list = []
+    for step in wf.steps:
+        pk = step.parent_key
+        parent = None
+        if pk:
+            if pk in by_id:
+                parent = pk
+            else:
+                for size in lengths:
+                    if len(pk) > size and pk[size] == "-" and pk[:size] in by_id:
+                        parent = pk[:size]
+                        break
+        if parent is None or parent == step.step_id:
+            roots.append(step)
+        else:
+            kids.setdefault(parent, []).append(step)
+    if not roots or not kids:
+        return None
+    return kids, roots
+
+
+def _linear_paths(wf: Workflow) -> list:
+    """Every route one contact could take through this workflow, in order.
+
+    With wiring, this is the real tree. Without it — a flat export, a
+    hand-written fixture — the list is only trustworthy up to the first fork,
+    because past that point it interleaves paths that never both run. Cutting
+    there loses findings on workflows that branch early; counting past it
+    invents findings on workflows that branch at all, and an invented finding
+    is the more expensive of the two.
+    """
+    steps = list(wf.steps)
+    if not steps:
+        return []
+    if len(steps) <= STEP_CAP:
+        wired = _wiring(wf)
+        if wired:
+            kids, roots = wired
+            paths: list = []
+            # `seen` rides alongside the trail so the cycle check is a set
+            # lookup. A malformed export can point a parentKey back up its own
+            # chain, and walking that without a guard never returns.
+            stack = [(root, (), frozenset()) for root in reversed(roots)]
+            while stack and len(paths) < PATH_CAP:
+                step, trail, seen = stack.pop()
+                if id(step) in seen:
+                    paths.append(list(trail))  # cycle: stop before repeating
+                    continue
+                trail = trail + (step,)
+                seen = seen | {id(step)}
+                children = kids.get(step.step_id) or []
+                if not children:
+                    paths.append(list(trail))
+                    continue
+                for child in reversed(children):
+                    stack.append((child, trail, seen))
+            if paths:
+                return paths
+    cut = len(steps)
+    for i, step in enumerate(steps):
+        if _forks(step):
+            cut = i
+            break
+    return [steps[:cut]]
+
+
+def _trunk(wf: Workflow) -> list:
+    """The steps every contact passes through, before any fork.
+
+    This is the only part of a workflow where "first" means what it sounds
+    like. Anything below the first fork is the first message on ONE path, and
+    a rule that calls that the opening message is asserting something the file
+    does not say.
+    """
+    paths = _linear_paths(wf)
+    if not paths:
+        return []
+    head = paths[0]
+    shared = len(head)
+    for path in paths[1:]:
+        shared = min(shared, len(path))
+        while shared and path[shared - 1] is not head[shared - 1]:
+            shared -= 1
+        if not shared:
+            return []
+    return head[:shared]
 
 
 # --------------------------------------------------------------------------
@@ -56,8 +195,27 @@ LIST_TRIGGER = re.compile(r"tag[_ -]?added|added[_ -]?tag|manual|bulk|import|"
 LIST_NAMES = re.compile(
     r"reactivat|database|\bcold\b|dormant|win[\s-]?back|blast|\bbulk\b|"
     r"purchased|scrape|\bimport(?:ed)?\b|\blists?\b", re.I)
+# ...and a bounded "list" still is not evidence when the word in front of it
+# names an audience that asked to be there. A waiting list, a VIP list and a
+# guest list are opt-ins; a price list and a checklist are not audiences at
+# all. Only the WORD is removed, so "Client List Reactivation" still trips on
+# "reactivat" — this narrows the weakest signal, it does not grant an amnesty.
+NOT_A_BOUGHT_LIST = re.compile(
+    r"\b(?:wait|waiting|vip|guest|short|price|pricing|check|punch|task|"
+    r"to[\s-]?do|client|customer|member|invite|attendee)[\s-]?lists?\b", re.I)
+# "campaign" is deliberately NOT here. It is fine as an enrolment shape below,
+# but a trigger somebody labelled "Spring Campaign" is not evidence that the
+# audience was bought, and treating it as evidence fired this rule on ordinary
+# tag-triggered promos whose names said nothing about a list.
 LIST_TRIGGER_WORDS = re.compile(
-    r"\bbulk\b|\bimport(?:ed)?\b|upload|\bcsv\b|\blists?\b|campaign", re.I)
+    r"\bbulk\b|\bimport(?:ed)?\b|upload|\bcsv\b|\blists?\b", re.I)
+
+# Steps that push a contact into a DIFFERENT workflow. The target of one of
+# these is a sub-workflow: its contacts were admitted by the caller, so its own
+# lack of a trigger says nothing about how they got there.
+ENROLLING_STEP = re.compile(
+    r"add[_ -]?to[_ -]?workflow|add[_ -]?workflow|start[_ -]?workflow|"
+    r"enroll|send[_ -]?to[_ -]?workflow", re.I)
 
 # Anything that reads as "we checked whether we are allowed to text this
 # person". Deliberately generous — a false positive here accuses a client of
@@ -97,14 +255,46 @@ def _checks_consent(wf: Workflow) -> bool:
     return False
 
 
-def _list_shaped(wf: Workflow) -> bool:
+def _sub_workflows(acct: Account) -> set:
+    """Workflows some OTHER workflow pushes contacts into, by id and by name.
+
+    A workflow with no trigger is normally somebody adding contacts by hand
+    from a list view — which is the shape this rule exists for. But it is also
+    how a sub-workflow looks, and a sub-workflow's contacts were vetted by
+    whatever admitted them. Only the account as a whole can tell the two
+    apart, so the whole account gets read once.
+    """
+    fed: set = set()
+    for wf in acct.workflows:
+        for step in wf.steps:
+            if not ENROLLING_STEP.search(f"{step.type} {step.name}"):
+                continue
+            targets = [v for kind, v in step.entity_refs() if kind == "workflow"]
+            cfg = step.config()
+            if isinstance(cfg, dict):
+                targets += [v for k, v in cfg.items()
+                            if _nk(k) in ("workflow", "workflowname",
+                                          "targetworkflow", "target")
+                            and isinstance(v, str)]
+            for target in targets:
+                key = str(target).strip().lower()
+                # A workflow that re-enrolls its OWN contacts has not been fed
+                # from anywhere: that is a loop, not an admission gate.
+                if key and key not in (wf.id.lower(), wf.name.lower()):
+                    fed.add(key)
+    return fed
+
+
+def _list_shaped(wf: Workflow, sub_workflows: set) -> bool:
     """True when contacts arrive here as a list, not as individuals."""
-    named = bool(LIST_NAMES.search(wf.name))
+    named = bool(LIST_NAMES.search(NOT_A_BOUGHT_LIST.sub(" ", wf.name)))
     if not wf.triggers:
         # No trigger at all means somebody adds contacts by hand — a bulk
         # action from a list view, or an import. It can also mean this is a
         # sub-workflow another workflow calls, where consent was settled
-        # upstream, so the name has to agree before this counts.
+        # upstream; when the export shows that call, this is not a list.
+        if wf.id.lower() in sub_workflows or wf.name.lower() in sub_workflows:
+            return False
         return named
     if not all(LIST_TRIGGER.search(f"{t.type} {t.name}") for t in wf.triggers):
         return False
@@ -124,21 +314,23 @@ def list_sms_without_consent_check(acct: Account):
     catalog that can produce a lawsuit and a dead sending number in the same
     week.
 
-    Detection is deliberately narrow. A tag-triggered sequence is the normal
-    way to run any campaign in GoHighLevel, so the enrolment shape alone is not
-    enough: the workflow must also read as list-aimed, and nothing anywhere in
-    it may check an opt-in field, tag or DND state. What cannot be proved from
-    an export is whether the consent exists somewhere else — a form archive, a
-    checkbox on a landing page — which is why the finding asks for the record
-    rather than declaring there is none.
+    Detection is deliberately narrow, and the claim is narrower still. Whether
+    consent EXISTS is not decidable from a workflow export and this rule never
+    says it does not; what is decidable is whether the workflow reads it, and
+    that is all the finding asserts. A tag-triggered sequence is the normal way
+    to run any campaign in GoHighLevel, so the enrolment shape alone is not
+    enough: the workflow must also read as list-aimed by name, nothing anywhere
+    in it may check an opt-in field, tag or DND state, and a workflow another
+    workflow feeds is exempt because its contacts were admitted elsewhere.
     """
+    sub_workflows = _sub_workflows(acct)
     for wf in acct.published():
         if not wf.sms_steps or acct.config.is_transactional(wf.name):
             continue
         if any(any(k in t.canonical_type() for k in CONSENT_TRIGGERS)
                for t in wf.triggers):
             continue
-        if not _list_shaped(wf) or _checks_consent(wf):
+        if not _list_shaped(wf, sub_workflows) or _checks_consent(wf):
             continue
         texts = wf.sms_steps
         yield _finding(
@@ -170,9 +362,11 @@ def list_sms_without_consent_check(acct: Account):
 # --------------------------------------------------------------------------
 
 # Federal TCPA: no telemarketing call or text before 8am or after 9pm in the
-# CALLED PARTY's local time. Several states are stricter and stop at 8pm
-# (Florida's is the one that produces most of the litigation), so a window that
-# runs to 9pm is federally legal and still exposed on a nationwide list.
+# CALLED PARTY's local time. Around ten states are stricter and stop at 8pm —
+# Florida's FTSA and Oklahoma's Telephone Solicitation Act are the two usually
+# cited — so a window that runs to 9pm is federally legal and still exposed on
+# a nationwide list. That gap is why this rule reports in two registers, and
+# why the two must never be confused with one another; see the branches below.
 TCPA_OPEN = 8 * 60
 TCPA_CLOSE = 21 * 60
 STATE_CLOSE = 20 * 60
@@ -185,6 +379,13 @@ WINDOW_END_KEYS = ("end", "endtime", "endat", "to", "totime", "finish",
                    "closes", "close", "latest", "before")
 WINDOW_HOLDER_KEYS = ("window", "sendingwindow", "sendwindow", "quiethours",
                       "resumewindow", "deliverywindow")
+# Toggling a send window off in the builder does not clear the times it was
+# set to. An export therefore carries the old bounds next to an explicit
+# disable flag, and reading those bounds as live accuses a client of texting
+# at hours the workflow is not sending at at all.
+WINDOW_OFF_KEYS = ("enabled", "isenabled", "active", "isactive", "on",
+                   "enable", "applywindow", "usewindow")
+WINDOW_OFF_WORDS = ("false", "0", "no", "off", "disabled", "none")
 
 
 def _minutes(value):
@@ -222,9 +423,26 @@ def _minutes(value):
     return hour * 60 + minute
 
 
+def _window_is_off(window) -> bool:
+    """True when the window carries an explicit 'switched off' flag."""
+    if not isinstance(window, dict):
+        return False
+    for key, value in window.items():
+        if _nk(key) not in WINDOW_OFF_KEYS:
+            continue
+        if isinstance(value, str):
+            if value.strip().lower() in WINDOW_OFF_WORDS:
+                return True
+        elif value is False or value is None:
+            return True
+        elif isinstance(value, (int, float)) and value == 0:
+            return True
+    return False
+
+
 def _bounds(window):
     """(open, close) in minutes past midnight for a window dict."""
-    if not isinstance(window, dict):
+    if not isinstance(window, dict) or _window_is_off(window):
         return None, None
     start = end = None
     for key, value in window.items():
@@ -263,10 +481,10 @@ def _clock(mins) -> str:
     return f"{hour % 12 or 12}:{minute:02d}{'am' if hour < 12 else 'pm'}"
 
 
-@rule("GHL054", "Send window opens or closes outside the legal hours",
+@rule("GHL054", "Send window bounds sit outside safe texting hours",
       "critical", "compliance", "compliance", "timing", "sms")
 def quiet_hours_bounds_are_illegal(acct: Account):
-    """The window exists — and its BOUNDS are outside 8am-9pm local.
+    """The window exists — and this rule reads the NUMBERS in it.
 
     GHL013 asks whether a window is evaluated in the contact's timezone and
     GHL029 asks whether there is a window at all. Both can pass on a workflow
@@ -274,6 +492,26 @@ def quiet_hours_bounds_are_illegal(acct: Account):
     7am-10pm window is a window, in the contact's timezone, and it texts people
     an hour before and an hour after the hours the TCPA allows — which is the
     single most litigated fact pattern in SMS marketing, priced per message.
+
+    Two registers, never confused:
+
+      critical — the bounds are outside 8am-9pm, so the workflow is configured
+                 to send at hours federal law does not allow. This is the
+                 accusation, and it only ever appears when the numbers support
+                 it exactly.
+      medium   — the bounds are INSIDE the federal hours and the window closes
+                 after 8pm, which is legal everywhere federally and exposed in
+                 the states that stop at 8pm.
+
+    The rule title covers both because "safe texting hours" is not the same
+    set as "legal hours". An earlier version titled itself "outside the legal
+    hours" and then fired its state branch on 08:00-21:00 — the textbook
+    federally-correct window — so the finding contradicted the rule it came
+    from and read as a legal accusation against an account that had done
+    everything right. The state branch is worth keeping: closing at 8pm costs
+    nothing in replies and removes the exposure. It is worth keeping only if it
+    never masquerades as the federal one, which is what the split title, the
+    medium severity and the finding's own wording are all for.
 
     Only workflows that place a phone call or send a text are checked: quiet
     hours are a telephone rule, and an email window outside these bounds is a
@@ -287,7 +525,7 @@ def quiet_hours_bounds_are_illegal(acct: Account):
         for label, window in _windows(wf):
             start, end = _bounds(window)
             if start is None and end is None:
-                continue  # unreadable bounds: say nothing rather than guess
+                continue  # unreadable or switched off: say nothing rather than guess
             step = label or (phone[0].name or phone[0].type)
 
             if start is not None and end is not None and end <= start:
@@ -332,9 +570,9 @@ def quiet_hours_bounds_are_illegal(acct: Account):
                     "per message, so the exposure scales with the size of the "
                     "list, not with the size of the mistake.",
                     "Narrow the window to 8am-9pm at the widest, and 9am-8pm "
-                    "if the list is nationwide — Florida and several other "
-                    "states stop at 8pm, and the strictest state on your list "
-                    "sets the real limit. Confirm the same screen has the "
+                    "if the list is nationwide — Florida, Oklahoma and several "
+                    "other states stop at 8pm, and the strictest state on your "
+                    "list sets the real limit. Confirm the same screen has the "
                     "window running in the CONTACT's timezone, not the "
                     "account's: correct bounds on the wrong clock breach the "
                     "statute just as reliably.",
@@ -347,19 +585,23 @@ def quiet_hours_bounds_are_illegal(acct: Account):
             if end is not None and STATE_CLOSE < end <= TCPA_CLOSE:
                 yield _finding(
                     "GHL054", "medium", wf,
-                    f"Send window runs to {_clock(end)} — legal federally, not "
-                    "in every state",
-                    f"This window closes at {_clock(end)}, which clears the "
-                    "federal 9pm ceiling. Several states are stricter and stop "
-                    "at 8pm — Florida's rule is the one that produces most of "
-                    "the litigation — so on a nationwide list this window is "
-                    "compliant for most of the contacts in it and not for the "
-                    "rest, which is a distinction nobody notices until a "
-                    "demand letter arrives.",
+                    f"Send window closes at {_clock(end)} — inside the federal "
+                    "hours, outside the strictest state ones",
+                    f"Nothing here is a federal breach: this window closes at "
+                    f"{_clock(end)}, which is inside the 8am-9pm the TCPA "
+                    "allows. It is a tightening worth making anyway. Around ten "
+                    "states stop telemarketing texts at 8pm rather than 9pm — "
+                    "Florida and Oklahoma are the two usually cited — so on a "
+                    "nationwide list this window is compliant for most of the "
+                    "contacts in it and not for the rest, and which contacts "
+                    "those are depends on where they live rather than on "
+                    "anything visible in the account.",
                     "Close the window at 8pm. The last hour of the evening is "
                     "the worst-performing send hour in the day anyway, so this "
                     "costs nothing in results and removes the exposure "
-                    "entirely.",
+                    "entirely. If the list is known to be single-state and that "
+                    "state follows the federal hours, leave it — this one is a "
+                    "risk posture, not a defect.",
                     step=step, reach=len(phone),
                     cost="A late-evening send is worth almost nothing in "
                          "replies and carries the whole of the state-law risk "
@@ -390,21 +632,36 @@ OPT_OUT_INTENT = (r"stop|opt\s*-?\s*out|unsubscribe|be\s+removed|remove\s+you|"
                   r"removed|taken\s+off|off\s+(?:this|the)\s+list|no\s+more|"
                   r"cancel|end\s+these|quit")
 
+# The invited word itself, and it must be in CAPS. Everything around it is read
+# case-insensitively; this one group is not, via a scoped flag.
+#
+# Without that, the capture group takes whatever word follows "reply" and the
+# rule reports it as a promised keyword — so "Reply to this message to opt out"
+# became "tells people to reply TO and nothing listens for it", and "Just reply
+# and we'll take you off the list" became AND. Four of the five most natural
+# ways to write a correct opt-out instruction produced a high-severity finding
+# naming an English stopword. Uppercase is what an actual keyword looks like in
+# SMS copy, and it is the same convention HONOURED_IN_BODY already relies on.
+# The cost is a missed lowercase "reply remove" — which is prose as often as it
+# is an instruction, and a missed finding is the cheap direction here.
+KEYWORD = r"(?-i:([A-Z][A-Z0-9-]{1,11}))"
+
 # "Reply REMOVE to be taken off this list."
 INVITE_THEN_INTENT = re.compile(
     r"\b(?:reply|text|txt|send|respond)\s+(?:back\s+|with\s+)?[\"'“]?"
-    r"([A-Za-z][A-Za-z0-9-]{1,11})[\"'”]?[^.!?\n]{0,25}?\b(?:" +
-    OPT_OUT_INTENT + r")\b", re.I)
+    + KEYWORD + r"[\"'”]?[^.!?\n]{0,25}?\b(?:" + OPT_OUT_INTENT + r")\b", re.I)
 
 # "To opt out, reply OFF."
 INTENT_THEN_INVITE = re.compile(
     r"\b(?:" + OPT_OUT_INTENT + r")\b[^.!?\n]{0,25}?\b"
     r"(?:reply|text|txt|send|respond)\s+(?:back\s+|with\s+)?[\"'“]?"
-    r"([A-Za-z][A-Za-z0-9-]{1,11})", re.I)
+    + KEYWORD, re.I)
 
 # The opposite mistake: a standard opt-out word offered for something that is
 # not an opt-out. Anyone who follows the instruction is unsubscribed from every
-# message the account will ever send them.
+# message the account will ever send them. Case-INSENSITIVE here, and that is
+# not an oversight: Twilio matches opt-out keywords case-insensitively, so a
+# lowercase "reply cancel" opts the contact out exactly as thoroughly.
 HIJACKED_KEYWORD = re.compile(
     r"\b(?:reply|text|txt|send|respond)\s+(?:back\s+|with\s+)?[\"'“]?"
     r"(stop|stopall|cancel|end|quit|unsubscribe|revoke)[\"'”]?\s*"
@@ -457,6 +714,11 @@ def keyword_does_not_match_the_promise(acct: Account):
     follows the instruction is marked do-not-disturb across the whole account
     and can never be texted again — no error, no warning, and the appointment
     is not cancelled either.
+
+    This is a check on a SPECIFIC promise the copy makes, which is what keeps
+    it distinct from GHL017. GHL017 asks whether the sequence carries opt-out
+    language at all; this asks whether the word it offers is the word the
+    provider answers.
     """
     listened = _listened_for(acct)
     for wf in acct.published():
@@ -543,12 +805,22 @@ def keyword_does_not_match_the_promise(acct: Account):
 # words are left out on purpose: "bar", "shot", "high" and "weed" all appear in
 # ordinary copy from restaurants, clinics and lawn-care companies, and a lawn
 # company reading "weed control — flagged as cannabis" in its audit stops
-# trusting the whole document.
+# trusting the whole document. The same test retired four more on this pass:
+# "jackpot" ("you hit the jackpot — 20% off"), bare "betting" ("I'm betting
+# you'll love it"), "xxx" (a masked phone number, reported as ADULT CONTENT to a
+# roofing company) and bare "escort" ("our team will escort you from the car
+# park"). An accusation of adult content is the one this report can least
+# afford to get wrong, so both of those now need the full phrase.
 RESTRICTED = (
     ("alcohol", re.compile(
         r"\b(?:alcohol|beers?|wines?|whisk(?:e)?y|vodka|tequila|bourbon|rum|"
-        r"cocktails?|liquor|happy hour|brewery|distillery|open bar)\b", re.I)),
+        r"liquor|happy hour|brewery|distillery|open bar)\b|"
+        # "cocktail attire" and "cocktail dress" are dress codes, not drinks.
+        r"\bcocktails?\b(?!\s+(?:attire|dress))", re.I)),
     ("cannabis or CBD", re.compile(
+        # CBD is read as cannabidiol. It also abbreviates "central business
+        # district" outside the US — but the filtering this rule predicts is
+        # US carrier filtering, so the US reading is the one that matters.
         r"\b(?:cannabis|marijuana|thc|cbd|dispensar(?:y|ies)|delta[\s-]?8)\b",
         re.I)),
     ("tobacco or vape", re.compile(
@@ -558,14 +830,16 @@ RESTRICTED = (
         r"\b(?:firearms?|handguns?|rifles?|shotguns?|pistols?|ammunition|ammo|"
         r"ar-?15|silencers?|gun (?:range|show|shop))\b", re.I)),
     ("gambling", re.compile(
-        r"\b(?:casinos?|sportsbook|betting|place a bet|poker|lottery|jackpot|"
-        r"free spins|wagers?)\b", re.I)),
+        r"\b(?:casinos?|sportsbook|poker|lottery|free spins|wagers?|"
+        r"sports\s?betting|betting\s+(?:app|site|odds|slip|line)s?|"
+        r"place a bet|bet now)\b", re.I)),
     ("loans or debt relief", re.compile(
         r"\b(?:payday loans?|debt (?:relief|consolidation|settlement)|"
         r"credit repair|loan forgiveness|fix your credit|get rich quick)\b",
         re.I)),
     ("adult content", re.compile(
-        r"\b(?:adult content|escorts?|onlyfans|strip club|xxx|nsfw)\b", re.I)),
+        r"\b(?:adult (?:content|entertainment)|escort (?:service|agency)|"
+        r"onlyfans|strip club|nsfw)\b", re.I)),
 )
 
 
@@ -651,6 +925,18 @@ IDENTIFIES_BRAND = re.compile(
     r"\b(?:from|with|at|by)\s+(?:the\s+)?[A-Z][\w&'’.-]+|"
     r"\b[A-Z][\w&'’.-]{2,}\s+here\b")
 
+# "Northgate Roofing: your quote is ready" — the brand led with, before the
+# message. A common and perfectly compliant opening shape that neither pattern
+# above sees, because there is no from/with/at/by and no "here". Only a colon
+# or a dash counts as the separator, and a greeting in front disqualifies it:
+# a plain hyphen after any capitalised word would read "Hey Jen - still
+# interested?" as an identified sender, which is the exact text this rule
+# exists to catch.
+IDENTIFIES_LEAD = re.compile(
+    r"^\s*(?!(?:Hi|Hey|Hello|Good|Quick|Just|Thanks|Thank|Reminder|Your|You|"
+    r"It|We|This|That|Still|Sorry|Congrats|Happy|Update|Heads)\b)"
+    r"[A-Z][\w&'’.-]{2,}(?:\s+[A-Z][\w&'’.-]+){0,3}\s*[:–—]\s")
+
 
 @rule("GHL057", "First text never says who is sending it", "medium",
       "compliance", "compliance", "sms", "copy")
@@ -664,16 +950,22 @@ def first_touch_does_not_identify(acct: Account):
     ignore it and report it — the second of which is the complaint rate that
     gets the number filtered.
 
-    Only the first outbound message is read, and only where the contact did not
-    just contact you: a reply to a form submitted a minute ago is a
-    conversation the contact started, and flagging it would bury the ones that
-    matter.
+    Two things narrow it, and both are about not overclaiming. The contact must
+    not have just contacted you: a reply to a form submitted a minute ago is a
+    conversation the contact started. And the message must sit on the TRUNK —
+    the steps every enrolled contact passes through before the workflow forks.
+    A text below a fork is the first message on one branch of several, not the
+    first message of the conversation, and this rule's whole argument is that
+    the recipient has never seen the number. On a real account it fired on a
+    booking nudge eleven nodes deep inside the HOT branch of an AI-routing
+    workflow, whose symptom line — "this is the first message the contact
+    receives" — was simply false about that step. A true observation attached
+    to a false premise is still a false positive.
     """
     for wf in acct.published():
-        if not wf.outbound:
-            continue
-        first = wf.outbound[0]
-        if not first.is_sms:
+        trunk = _trunk(wf)
+        first = next((s for s in trunk if s.is_outbound), None)
+        if first is None or not first.is_sms:
             continue
         if any(any(k in t.canonical_type() for k in REPLYING_TRIGGERS)
                for t in wf.triggers):
@@ -681,7 +973,8 @@ def first_touch_does_not_identify(acct: Account):
         body = first.bodies()
         if not body.strip():
             continue
-        if IDENTIFIES_PHRASE.search(body) or IDENTIFIES_BRAND.search(body):
+        if IDENTIFIES_PHRASE.search(body) or IDENTIFIES_BRAND.search(body) \
+                or IDENTIFIES_LEAD.search(body):
             continue
         yield _finding(
             "GHL057", "medium", wf,
@@ -786,12 +1079,16 @@ def _wait_minutes(step: Step):
     found = _value_unit(cfg)
     if found is not None:
         return found
+    # {"hours": 2, "minutes": 30} is one delay written in two keys. Returning
+    # on the first of them under-reads the wait, and every minute this reader
+    # loses makes the messages look closer together than they are.
+    total = None
     for key, value in cfg.items():
         factor = DURATION_UNITS.get(_nk(key))
         if factor and isinstance(value, (int, float)) \
                 and not isinstance(value, bool):
-            return float(value) * factor
-    return None
+            total = (total or 0) + float(value) * factor
+    return total
 
 
 def _span(minutes: float) -> str:
@@ -816,13 +1113,16 @@ def texts_stacked_inside_one_day(acct: Account):
     STOP. Complaint and opt-out rate is the number carriers grade a sending
     number on, so this is a deliverability defect before it is a taste one.
 
-    Read conservatively on purpose. The clock only advances on waits whose
-    duration the export actually states, and it stops entirely at a wait that
-    ends on an event — a reply wait can release in a second or never, and
-    guessing which would put a finding in a client's report that the file does
-    not support. Appointment-triggered ladders are exempt: their sends are
-    timed off a slot the contact chose, and three reminders before a booking
-    is the correct build.
+    Read conservatively on purpose, in three ways. The clock only advances on
+    waits whose duration the export actually states, and it stops entirely at a
+    wait that ends on an event — a reply wait can release in a second or never,
+    and guessing which would put a finding in a client's report that the file
+    does not support. The count runs per PATH, not down the flat step list: an
+    advanced-builder export writes every branch into one list, so three texts
+    sitting in three mutually exclusive branches look like a burst and are
+    actually one message. And appointment-triggered ladders are exempt: their
+    sends are timed off a slot the contact chose, and three reminders before a
+    booking is the correct build.
     """
     for wf in acct.published():
         if acct.config.is_transactional(wf.name):
@@ -832,27 +1132,30 @@ def texts_stacked_inside_one_day(acct: Account):
                for t in wf.triggers):
             continue
 
-        clock = 0.0
-        sent: list = []
-        for step in wf.steps:
-            if step.is_wait:
-                if step.type == "drip" or step.wait_is_conditional():
-                    break  # unknowable duration — keep what is already known
-                minutes = _wait_minutes(step)
-                if minutes is None:
-                    break
-                clock += minutes
-            elif step.is_sms:
-                sent.append(clock)
-        if len(sent) < BURST_LIMIT:
-            continue
-
-        worst, span = 0, 0.0
-        for i, start in enumerate(sent):
-            inside = [t for t in sent[i:] if t - start < DAY_MINUTES]
-            if len(inside) > worst:
-                worst, span = len(inside), inside[-1] - start
-        if worst < BURST_LIMIT:
+        worst, span, opener = 0, 0.0, None
+        for path in _linear_paths(wf):
+            clock = 0.0
+            sent: list = []
+            texts: list = []
+            for step in path:
+                if step.is_wait:
+                    if step.type == "drip" or step.wait_is_conditional():
+                        break  # unknowable duration — keep what is already known
+                    minutes = _wait_minutes(step)
+                    if minutes is None:
+                        break
+                    clock += minutes
+                elif step.is_sms:
+                    sent.append(clock)
+                    texts.append(step)
+            if len(sent) < BURST_LIMIT:
+                continue
+            for i, start in enumerate(sent):
+                inside = [t for t in sent[i:] if t - start < DAY_MINUTES]
+                if len(inside) > worst:
+                    worst, span, opener = (len(inside), inside[-1] - start,
+                                           texts[i])
+        if worst < BURST_LIMIT or opener is None:
             continue
 
         yield _finding(
@@ -870,7 +1173,7 @@ def texts_stacked_inside_one_day(acct: Account):
             "later touches a day or more apart, and move the middle message to "
             "email. If speed genuinely matters, keep the fast pair and make "
             "everything after it conditional on no reply.",
-            step=wf.sms_steps[0].name or wf.sms_steps[0].type, reach=worst,
+            step=opener.name or opener.type, reach=worst,
             cost="The contacts this burns are the ones who opted in. An opt-out "
                  "is permanent, and the complaint rate behind it is what gets "
                  "the whole account's texts filtered.")

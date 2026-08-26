@@ -404,11 +404,53 @@ def _conversion_guard(acct: Account):
     the contact out of every selling sequence at once. A per-workflow check
     cannot see it, and flagging every cadence in an account that has one would
     be reporting the correct pattern as a defect.
+
+    ⚠️ Order matters and used to be ignored. This returned the FIRST published
+    workflow matching the pattern, and `appointment_status` matches a
+    CANCELLATION as readily as a booking — so on a real account (Aug-26 2026)
+    the guard came back as "Appointment Cancelled - Clean Up & One Rebook Ask",
+    the exact opposite of a conversion, purely because it sorts first
+    alphabetically. Every GHL096 finding then named a cancellation workflow as
+    the thing that handles sales. Cancellation and no-show lanes are excluded,
+    and a positively-named conversion beats a merely-matching one.
     """
-    for wf in acct.published():
-        if any(_has(CONVERSION_TRIGGER, t) for t in wf.triggers) and wf.exits():
+    candidates = [wf for wf in acct.published()
+                  if any(_has(CONVERSION_TRIGGER, t) for t in wf.triggers)
+                  and wf.exits()
+                  and not re.search(r"cancel|no[_ -]?show|refund|lost|reschedul",
+                                    wf.name or "", re.I)]
+    if not candidates:
+        return None
+    # A workflow whose triggers say booked/paid/won outranks one that merely
+    # matched on a generic status change.
+    for wf in candidates:
+        if any(re.search(r"booked|confirmed|paid|payment|order|purchase|won",
+                         t.type or "", re.I) for t in wf.triggers):
             return wf
-    return None
+    return candidates[0]
+
+
+def _guard_removes(guard) -> set:
+    """Workflow ids the conversion guard actually pulls the contact out of.
+
+    This is what turns GHL096 from a hedge into a fact. A `remove_from_workflow`
+    step names its target, so whether a given cadence is covered is knowable —
+    it never needed to be handed to the reader as "confirm this yourself".
+    """
+    out = set()
+    if guard is None:
+        return out
+    for step in guard.exits():
+        cfg = step.config()
+        if not isinstance(cfg, dict):
+            continue
+        for k, v in cfg.items():
+            if _nk(k) in ("workflowid", "workflow", "targetworkflowid",
+                          "workflowids") and isinstance(v, str) and v.strip():
+                out.add(v.strip())
+            elif _nk(k) in ("workflowids", "workflows") and isinstance(v, list):
+                out.update(str(x).strip() for x in v if isinstance(x, str))
+    return out
 
 
 @rule("GHL096", "Selling cadence keeps running after the customer buys", "high",
@@ -446,22 +488,49 @@ def cadence_with_no_conversion_exit(acct: Account):
         if not selling or _checks_for_conversion(wf):
             continue
         if guard is not None and guard.id != wf.id:
+            # The guard's remove steps NAME their targets, so whether this
+            # cadence is covered is a fact, not a question for the reader. It
+            # used to be reported as "confirm this yourself", which put a
+            # finding on every cadence in a correctly built account — including
+            # ones the guard demonstrably did remove.
+            if wf.id and wf.id in _guard_removes(guard):
+                continue  # genuinely covered; nothing to report
+            if not _guard_removes(guard):
+                # The guard exits, but not via a target this export names —
+                # a goal event, or a shape we cannot read. Say so rather than
+                # assert a gap that may not exist.
+                yield _finding(
+                    "GHL096", "low", wf,
+                    f"Conversions are handled by '{guard.name}' — confirm this "
+                    "cadence is in its remove list",
+                    "This selling sequence has no conversion check of its own, "
+                    "which is correct when one workflow pulls contacts out of "
+                    "every cadence the moment they book or buy. That workflow "
+                    "exits in a way this export does not name a target for, so "
+                    "whether this cadence is on its list cannot be read from "
+                    "the file — it has to be checked by eye.",
+                    f"Open '{guard.name}' and confirm its exit covers this "
+                    "cadence.",
+                    cost="If this cadence was left off the list, every contact "
+                         "who converts out of it keeps being sold to — in the "
+                         "one part of the account that was supposed to be safe.")
+                continue
             yield _finding(
-                "GHL096", "low", wf,
-                f"Conversions are handled by '{guard.name}' — confirm this "
-                "cadence is in its remove list",
-                "This selling sequence has no conversion check of its own, "
-                "which is correct when one workflow pulls contacts out of every "
-                "cadence the moment they book or buy. But that workflow removes "
-                "from a NAMED list of workflows, and a cadence added later is "
-                "the easiest thing in the account to leave off it. If this one "
-                "is missing, a customer who has already booked keeps receiving "
-                "the rest of these messages.",
-                f"Open '{guard.name}' and check its remove-from-workflow step "
-                "names this cadence.",
-                cost="If this cadence was left off the list, every contact who "
-                     "converts out of it keeps being sold to — in the one part "
-                     "of the account that was supposed to be safe.")
+                "GHL096", "high", wf,
+                f"'{guard.name}' pulls contacts out of the other cadences on a "
+                f"conversion — and not out of this one",
+                f"When a contact converts, '{guard.name}' removes them from the "
+                "selling sequences it names. This cadence is not one of them, "
+                "so a customer who has already booked or paid stays enrolled "
+                "here and keeps receiving the rest of these messages. It is the "
+                "worst version of the problem, because the account looks like "
+                "it handles conversions — it does, everywhere except here.",
+                f"Open '{guard.name}', find its remove-from-workflow step, and "
+                f"add '{wf.name}' to the list. Then book a test appointment and "
+                "confirm the contact drops out of this cadence.",
+                cost="Every contact who converts out of this sequence keeps "
+                     "being sold to, in an account whose other cadences all "
+                     "stop correctly.")
             continue
         yield _finding(
             "GHL096", "high", wf,
@@ -657,17 +726,53 @@ def upsell_with_no_churn_screen(acct: Account):
 # --------------------------------------------------------------------------
 
 def _opportunity_action(step: Step) -> str:
-    """"create", "advance" or "" for what this step does to an opportunity."""
-    nk = _nk(step.type)
-    if "opportunit" not in nk and "deal" not in nk:
+    """"create", "advance" or "" for what this step does to an opportunity.
+
+    ⚠️ The step TYPE alone is not enough, and trusting it made this rule report
+    a false positive on a real account (measured Aug-26 2026). GoHighLevel ships
+    ONE opportunity action — `create_opportunity` — and it is create-OR-UPDATE.
+    A builder advances a deal by running that same action with a different
+    `pipeline_stage_id`. There is no `move_opportunity` type to look for.
+
+    So an account whose steps are literally named "Move to Call Booked", "Move
+    to No-Show stage" and "Advance to Nurture" classified as twenty-one creates
+    and zero advances, and GHL099 told the owner their pipeline was "filled by
+    automation and moved by nobody" while it was moving deals through four
+    stages. The stage written is the real signal — see _stage_of().
+    """
+    if "opportunit" not in _nk(step.type) and "deal" not in _nk(step.type):
         return ""
-    if any(k in nk for k in ("update", "edit", "move", "change", "stage",
-                             "status", "advance", "won", "win", "lost",
-                             "close")):
+    # Split on non-letters instead of substring matching. `remove_opportunity`
+    # contains "move", so a DELETION was being counted as an advance.
+    parts = set(re.split(r"[^a-z]+", str(step.type).lower()))
+    if parts & {"update", "edit", "move", "change", "stage", "status",
+                "advance", "won", "win", "lost", "close"}:
         return "advance"
-    if any(k in nk for k in ("create", "add", "new")):
+    # On the only action GoHighLevel provides, what the builder named the step
+    # is the clearest statement of intent the export carries.
+    if re.search(r"\b(move[ds]?|advance[ds]?|progress|promote|push)\b",
+                 str(step.name or ""), re.I):
+        return "advance"
+    if parts & {"create", "add", "new"}:
         return "create"
     return ""
+
+
+def _stage_of(step: Step):
+    """The pipeline stage this step writes, or None.
+
+    Two steps on one pipeline writing two DIFFERENT stages is an account
+    advancing deals, whatever the step types say. This is the structural
+    version of the signal `_opportunity_action` can only guess at from a label.
+    """
+    cfg = step.config()
+    if not isinstance(cfg, dict):
+        return None
+    for k, v in cfg.items():
+        if _nk(k) in ("pipelinestageid", "stageid", "stage", "pipelinestage") \
+                and isinstance(v, str) and v.strip() and "{{" not in v:
+            return v.strip()
+    return None
 
 
 def _pipeline_of(step: Step):
@@ -706,18 +811,30 @@ def pipeline_only_ever_fills(acct: Account):
 
     creators: dict = {}
     advanced: set = set()
+    # pipeline -> every distinct stage any step writes to it. More than one
+    # stage means deals move through this pipeline, which is the only
+    # structural proof available on a platform whose single opportunity action
+    # both creates and updates.
+    stages: dict = {}
     for wf in acct.published():
         for step in wf.steps:
             action = _opportunity_action(step)
             if not action:
                 continue
             pipe = _pipeline_of(step)
+            if pipe is not None:
+                stage = _stage_of(step)
+                if stage:
+                    stages.setdefault(pipe, set()).add(stage)
             if action == "advance":
                 if pipe is None:
                     return  # unattributable; see the docstring
                 advanced.add(pipe)
             elif pipe is not None:
                 creators.setdefault(pipe, {})[wf.name] = wf
+    for pipe, seen in stages.items():
+        if len(seen) > 1:
+            advanced.add(pipe)
 
     names = acct.inventory.pipelines
     for pipe in sorted(creators):

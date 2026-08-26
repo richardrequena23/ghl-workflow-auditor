@@ -74,7 +74,20 @@ ACCOUNT_OWNED = re.compile(r"^(custom_?values?|location|account|user)\.", re.I)
 # Where an export keeps the text that is sent to the model. `text`, `content`
 # and `message` are generic keys — they are only read on a step that has
 # already been identified as an AI step, where they mean the prompt.
-PROMPT_KEYS = {"prompt", "prompts", "systemprompt", "systemmessage",
+# `prompttext` FIRST, because it is the one GoHighLevel actually writes and its
+# absence made this whole pack blind on real accounts. A live `chatgpt` step
+# carries {"type","event","model","temperature","promptText","actionType",
+# "memoryKey"} — measured Aug-26 2026 against a real location. Without
+# `prompttext` in this set, GHL077 found no prompt to read, so the injection
+# check silently passed on two workflows that paste {{message.body}} — text a
+# contact wrote — straight into the model with no delimiting. A rule that cannot
+# see the field is worse than no rule: it reports clean.
+#
+# This is the exact failure the fixtures could not catch. They were written with
+# `prompt`, which the set already had, so 116 tests passed while the rule was
+# blind to every real export.
+PROMPT_KEYS = {"prompttext", "promptbody", "systemprompttext",
+               "prompt", "prompts", "systemprompt", "systemmessage",
                "userprompt", "usermessage", "prompttemplate", "template",
                "instruction", "instructions", "context", "input", "query",
                "question", "messages", "message", "content", "text", "system",

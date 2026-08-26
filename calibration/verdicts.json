@@ -19,12 +19,12 @@
     },
     "030900632fec8e4f": {
       "account": "requena-live-aug26",
-      "note": "Correctly calibrated: fires at 'low' and asks a question rather than asserting a defect.",
+      "note": "CORRECTED. Dead Lead Reactivation IS removed on booking \u2014 'Strategy Call - Booking & Confirmation v2' names it in a remove_from_workflow step. The rule hedged instead of reading the removal graph it had. FIXED: covered cadences are now silent.",
       "rule": "GHL096",
       "severity": "low",
       "step": "",
       "title": "Conversions are handled by 'Appointment Cancelled - Clean Up & One Rebook Ask' \u2014 confirm this cadence is in its remove list",
-      "verdict": "real",
+      "verdict": "false_positive",
       "workflow": "Dead Lead Reactivation"
     },
     "057ae1a6e3a32e0d": {
@@ -459,7 +459,7 @@
     },
     "ae17d7c0b1171fc2": {
       "account": "requena-live-aug26",
-      "note": "Correctly calibrated: fires at 'low' and asks a question rather than asserting a defect.",
+      "note": "Real defect, but the finding NAMED THE WRONG GUARD. _conversion_guard took the first workflow matching appointment_status in export order = 'Appointment Cancelled - Clean Up', a cancellation. Missed Call Text Back genuinely is in no booking-removal list, so it keeps running after a customer books. FIXED: cancellation lanes excluded, and the finding now states the gap as fact at 'high' instead of asking the reader to check.",
       "rule": "GHL096",
       "severity": "low",
       "step": "",
@@ -649,12 +649,12 @@
     },
     "f26f3bf3ff627410": {
       "account": "requena-live-aug26",
-      "note": "8 workflows create opportunities on the pipeline and nothing ever moves or closes one. Verified in the step list.",
+      "note": "CORRECTED. I judged this real; it is not. GoHighLevel ships ONE opportunity action (create_opportunity = create-OR-update) and advancement is a different pipeline_stage_id. This account writes 4 distinct stages via steps literally named 'Move to Call Booked' / 'Advance to Nurture' / 'Move to No-Show stage'. _opportunity_action read only step.type, so it saw 21 creates and 0 advances. FIXED: stage-diversity is now the advance signal, and the type match is word-boundaried so remove_opportunity no longer reads as 'move'.",
       "rule": "GHL099",
       "severity": "medium",
       "step": "Dead Lead Reactivation, Lead Source Attribution & Reporting, Missed Call Text Back, No Show Recovery, Reply Handler - Route, Stop Nurture, Alert, Speed to Lead - 5 Minute Response, Strategy Call - Booking & Confirmation v2",
       "title": "'Coaching Sales Pipeline' is filled by automation and moved by nobody",
-      "verdict": "real",
+      "verdict": "false_positive",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
     "f4d83d1f46688246": {

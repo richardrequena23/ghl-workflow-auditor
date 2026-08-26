@@ -57,10 +57,45 @@ FIELD_KEY_NAMES = {"field", "fieldkey", "fieldid", "fieldname", "customfield",
                    "customfieldid", "targetfield", "attribute"}
 FIELD_VALUE_NAMES = {"value", "newvalue", "fieldvalue", "val", "to", "set",
                      "content"}
+# Where the READABLE name sits when the key beside it is an id. GoHighLevel's
+# own workflow document writes a contact-field update as
+#     {"attributes": {"actionType": "update_field_data",
+#                     "fields": [{"field": "tqcNZQbMZYhmYwFdRrLd",
+#                                 "value": "Facebook Ads",
+#                                 "title": "Attribution Channel",
+#                                 "type": "string"}]}}
+# so `field` holds the custom field's ID and `title` is the only readable name
+# in the step. Reading `field` alone is what made every write in a live account
+# invisible to four of these six checks — and made the one finding that did
+# survive name a field called 'tqcnzqbmzyhmywfdrrld'.
+#
+# The `type` beside it is NOT the field's data type and is never read here: the
+# builder writes "string" for every custom field whatever its real type, and
+# older steps in the same account carry "TEXT" for a field that is also TEXT —
+# the key is a UI input hint, so a type check built on it would be a guess.
+FIELD_NAME_KEYS = {"title", "fieldname", "fieldlabel", "fieldtitle",
+                   "displayname", "fielddisplayname"}
 
 
 def _nk(key) -> str:
     return re.sub(r"[^a-z]", "", str(key).lower())
+
+
+def _looks_like_an_id(value: str) -> bool:
+    """True when this key is one of GoHighLevel's opaque object ids.
+
+    A field KEY is lower case with separators ('contact.attribution_channel');
+    a display NAME has spaces ('Attribution Channel'); an ID is a long run of
+    letters and digits with neither ('tqcNZQbMZYhmYwFdRrLd'). Deliberately
+    strict — three capitals or a digit, sixteen characters, no separator — so
+    that a camelCase field key is not mistaken for one. Being wrong the strict
+    way loses a finding; being wrong the loose way puts a 20-character id in
+    front of a client instead of the name of their field.
+    """
+    v = str(value).strip()
+    if len(v) < 16 or not re.fullmatch(r"[A-Za-z0-9]+", v):
+        return False
+    return bool(re.search(r"\d", v)) or sum(c.isupper() for c in v) >= 3
 
 
 def _as_text(value) -> str:
@@ -87,8 +122,41 @@ def _word_boundary(key: str) -> str:
     return r"(?<![a-z0-9])" + re.escape(key) + r"(?![a-z0-9])"
 
 
-def _pairs_from(obj) -> list:
-    """(field key, value) out of one settings object, if it carries both."""
+def _display_name(obj) -> str:
+    """The readable field name sitting beside an id, if this object has one."""
+    if not isinstance(obj, dict):
+        return ""
+    for k, v in obj.items():
+        if _nk(k) in FIELD_NAME_KEYS and isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _resolve(key: str, holder, allow_title: bool):
+    """(readable field key, the id it came from) for one written field.
+
+    Three outcomes. A readable key stands as it is. An opaque id with a
+    display name beside it resolves to the name, and the id is carried along
+    so a READ of the same field by id can still be recognised. An opaque id
+    with no name beside it resolves to nothing at all — the field is genuinely
+    unidentifiable from the file, and inventing a key for it is how a data
+    rule starts lying about which field it means.
+    """
+    if not _looks_like_an_id(key):
+        return _field_slug(key), ""
+    title = _display_name(holder) if allow_title else ""
+    if not title:
+        return "", ""
+    return _field_slug(title), str(key).strip()
+
+
+def _pairs_from(obj, allow_title: bool = False) -> list:
+    """(field key, value, id) out of one settings object, if it carries both.
+
+    `allow_title` is off for the step's own raw body, because a bare `title`
+    there is the STEP's title — reading it as a field name writes a field
+    called "Store mobile number", which is a finding about nothing.
+    """
     if not isinstance(obj, dict):
         return []
     key = value = None
@@ -102,39 +170,44 @@ def _pairs_from(obj) -> list:
             value = _as_text(v)
     if key is None or value is None:
         return []
-    return [(_field_slug(key), value)]
+    resolved, ident = _resolve(key, obj, allow_title)
+    return [(resolved, value, ident)]
 
 
 def _field_writes(step: Step) -> list:
-    """[(field key, written value)] for every contact field this step sets.
+    """[(field key, written value, field id)] for every field this step sets.
 
     Four shapes, because four exports write it four ways: the flat
-    field/value pair, a {"fields": {...}} map, a list of field/value objects,
-    and a map whose values are themselves {"value": ...} objects. An id-only
-    write ({"customFieldId": "abc123"}) yields nothing on purpose — the key is
-    unreadable, and guessing at it is how a data rule starts lying.
+    field/value pair, a {"fields": {...}} map, a list of field/value objects
+    (what a real GoHighLevel export writes), and a map whose values are
+    themselves {"value": ...} objects.
     """
     cfg = step.config()
     if not isinstance(cfg, dict):
         return []
-    out = list(_pairs_from(cfg))
+    # `config()` falls back to the step's own raw body when the export has no
+    # settings holder, and a `title` there belongs to the step, not the field.
+    nested = cfg is not step.raw
+    out = list(_pairs_from(cfg, allow_title=nested))
     for k, v in cfg.items():
         if _nk(k) not in ("fields", "customfields", "contactfields"):
             continue
         if isinstance(v, dict):
             for fk, fv in v.items():
                 if isinstance(fv, (str, bool, int, float)):
-                    out.append((_field_slug(fk), _as_text(fv)))
+                    key, ident = _resolve(fk, None, False)
+                    out.append((key, _as_text(fv), ident))
                 elif isinstance(fv, dict):
+                    key, ident = _resolve(fk, fv, True)
                     for vk, vv in fv.items():
                         if _nk(vk) in FIELD_VALUE_NAMES \
                                 and isinstance(vv, (str, bool, int, float)):
-                            out.append((_field_slug(fk), _as_text(vv)))
+                            out.append((key, _as_text(vv), ident))
                             break
         elif isinstance(v, list):
             for item in v:
-                out.extend(_pairs_from(item))
-    return [(key, value) for key, value in out if key]
+                out.extend(_pairs_from(item, allow_title=True))
+    return [row for row in out if row[0]]
 
 
 def _writes_fields(step: Step) -> bool:
@@ -161,7 +234,16 @@ NOT_THE_NUMBER = {"date", "time", "at", "id", "ids", "uuid", "type", "carrier",
 # E.164: a plus, a country code that cannot start with zero, then digits. No
 # spaces, no punctuation, no extension — that is the whole point of it.
 E164 = re.compile(r"^\+[1-9]\d{7,14}$")
-COUNTRY_PREFIX = re.compile(r"^\+\d{1,3}$")
+# What can legitimately sit in front of a merge field: the plus on its own, or
+# the plus and a literal country code. "+{{ country_code }}{{ phone_raw }}" is
+# the account ASSEMBLING E.164 out of the two halves it stores, which is the
+# fix this rule asks for, not an instance of the defect.
+COUNTRY_PREFIX = re.compile(r"^\+\d{0,3}$")
+# A channel scheme in front of an E.164 number. Twilio addresses WhatsApp as
+# "whatsapp:+15551234567" and a click-to-call field holds "tel:+15551234567";
+# both are exact, both match everywhere once the scheme is stripped, and
+# neither is the "two strings for one human" problem this rule is about.
+CHANNEL_SCHEME = re.compile(r"^(tel|sms|mms|callto|whatsapp|wa)\s*:\s*", re.I)
 
 
 def _phone_number_field(key: str) -> bool:
@@ -171,7 +253,8 @@ def _phone_number_field(key: str) -> bool:
 
 def _phone_problem(value: str) -> str:
     """How this written phone number departs from E.164, or "" if it does not."""
-    v = (value or "").strip()
+    original = (value or "").strip()
+    v = CHANNEL_SCHEME.sub("", original).strip()
     if not v:
         return ""
     if TOKEN.search(v):
@@ -180,12 +263,12 @@ def _phone_problem(value: str) -> str:
             return ""  # a bare merge field — its contents are not in the export
         if COUNTRY_PREFIX.fullmatch(rest):
             return ""  # "+1{{ phone }}" is the fix for this, not an instance of it
-        return f"assembled out of pieces as '{v}'"
+        return f"assembled out of pieces as '{original}'"
     if E164.fullmatch(v):
         return ""
     if len(re.sub(r"\D", "", v)) < 7:
         return ""  # not a phone number at all; some other field write
-    return f"stored as '{v}'"
+    return f"stored as '{original}'"
 
 
 @rule("GHL071", "Phone number written to a contact field without E.164 formatting",
@@ -207,7 +290,7 @@ def phone_written_unnormalised(acct: Account):
         for step in wf.steps:
             if not _writes_fields(step):
                 continue
-            for key, value in _field_writes(step):
+            for key, value, _ident in _field_writes(step):
                 if not _phone_number_field(key):
                     continue
                 problem = _phone_problem(value)
@@ -248,6 +331,15 @@ OPT_OUT_FIELD = re.compile(
     r"(?:_|$)")
 OPT_OUT_TYPE = re.compile(r"dnd|do[_ -]?not[_ -]?disturb|opt[_ -]?out|"
                           r"unsubscrib", re.I)
+# A step whose TYPE says it removes the flag carries no field/value pair at
+# all — the action IS the instruction. Only believed when the type names both
+# halves ("remove dnd", "dnd off"), never on a bare "dnd" step, which is just
+# as likely to be the action that SETS it.
+OPT_OUT_REMOVAL_TYPE = re.compile(
+    r"(remove|clear|delete|disable|reset|undo|off|revoke)[_ -]?"
+    r"(contact[_ -]?)?(dnd|do[_ -]?not[_ -]?disturb|opt[_ -]?out|unsubscrib\w*)"
+    r"|(dnd|do[_ -]?not[_ -]?disturb|opt[_ -]?out)[_ -]?"
+    r"(removal|removed|remove|clear\w*|off|disable\w*)", re.I)
 # Words that make the name an ATTRIBUTE of the opt-out rather than the flag:
 # "Opt Out Reason" = none, "Unsubscribe Link" = the URL, "DND Until" = a date.
 # Writing any of those changes nothing about consent.
@@ -266,7 +358,7 @@ def _opt_out_flag(key: str) -> bool:
 
 def _opt_out_cleared(step: Step):
     """(field, value) when this step switches an opt-out flag back off."""
-    for key, value in _field_writes(step):
+    for key, value, _ident in _field_writes(step):
         if _opt_out_flag(key) and value.strip().lower() in FALSEY:
             return key, value
     # A dedicated DND action carries no field/value pair — the flag IS the key.
@@ -284,7 +376,59 @@ def _opt_out_cleared(step: Step):
             if _opt_out_flag(slug(k)) \
                     and _as_text(v).strip().lower() in FALSEY:
                 return slug(k), _as_text(v)
+    # The action that carries no settings at all and says what it does in its
+    # own type: "Remove DND", "Clear Unsubscribed".
+    if OPT_OUT_REMOVAL_TYPE.search(str(step.type or "")):
+        return slug(step.type), "off"
     return None
+
+
+# A person can un-opt-out, and when they do, clearing the flag is the ONLY way
+# to message them again — there is no second switch. So a workflow whose
+# TRIGGER is the contact asking to be messaged again is doing this correctly.
+# Evidence has to come from the trigger, never from the workflow's name: the
+# name says what the builder meant, the trigger says who actually enters.
+RE_CONSENT_NAME = re.compile(
+    r"re[_ -]?subscribe|resubscribe|opt[_ -]?in|opt[_ -]?back[_ -]?in|"
+    r"re[_ -]?consent|double[_ -]?opt", re.I)
+# Keyword replies that mean "start messaging me" and nothing else. "YES" is
+# deliberately absent — it is the answer to any question, including one asked
+# by the workflow doing the clearing.
+RE_CONSENT_KEYWORD = re.compile(
+    r"^\s*(start|unstop|resume|subscribe|re-?subscribe|opt[_ -]?in|optin)\b",
+    re.I)
+
+
+def _strings_in(node) -> list:
+    out: list[str] = []
+
+    def walk(n):
+        if isinstance(n, str):
+            out.append(n)
+        elif isinstance(n, dict):
+            for v in n.values():
+                walk(v)
+        elif isinstance(n, list):
+            for v in n:
+                walk(v)
+
+    walk(node)
+    return out
+
+
+def _entered_by_re_consenting(wf: Workflow) -> bool:
+    """True when the only way into this workflow is asking to be messaged."""
+    for trg in wf.triggers:
+        if RE_CONSENT_NAME.search(str(trg.name or "")) \
+                or RE_CONSENT_NAME.search(str(trg.type or "")):
+            return True
+        try:
+            values = _strings_in(trg.filters())
+        except Exception:  # noqa: BLE001 - a filter shape nothing can walk
+            values = []
+        if any(RE_CONSENT_KEYWORD.match(v) for v in values):
+            return True
+    return False
 
 
 @rule("GHL072", "Workflow switches a contact's opt-out back off", "high",
@@ -300,8 +444,15 @@ def opt_out_flag_cleared(acct: Account):
     find who was affected. It gets built for an honest reason (someone set DND
     in bulk by mistake, a "clean up the list" workflow) and then quietly runs
     on everybody who passes through.
+
+    One build is exempt: a workflow a contact enters BY asking to be messaged
+    again — a START/UNSTOP keyword, a re-subscribe form. Clearing the flag is
+    the only way to honour that, there is no second switch, and reporting it
+    would be telling a client their opt-in handler is a violation.
     """
     for wf in acct.published():
+        if _entered_by_re_consenting(wf):
+            continue  # the contact asked; this is the correct place to do it
         for i, step in enumerate(wf.steps):
             if not _writes_fields(step) \
                     and not OPT_OUT_TYPE.search(str(step.type or "")):
@@ -342,21 +493,41 @@ def opt_out_flag_cleared(acct: Account):
 # GHL073 — a tag list that grows one entry per contact
 # --------------------------------------------------------------------------
 
+# Merge sources that are effectively unique per contact. A tag built on one of
+# these mints a tag per person. Anything else — a status, a stage, a plan, a
+# source — may hold four values, and four tags is a build somebody meant, so
+# the finding on those states the risk instead of asserting the damage.
+UNBOUNDED_MERGE = re.compile(
+    r"(?:^|[._])(first_?name|last_?name|full_?name|name|email|phone|mobile|"
+    r"city|address\d?|full_?address|postal_?code|zip|company|company_?name|"
+    r"business_?name|website|url|link|date|time|datetime|birthday|dob|id|"
+    r"uuid|message|body|response|answer|note|notes|score|amount|total)"
+    r"(?:$|[._])", re.I)
+
+
+def _merge_sources(tag: str) -> list:
+    """The token paths inside a tag name, custom values already removed."""
+    return [t.strip("{} ").strip()
+            for t in TOKEN.findall(CUSTOM_VALUE_TOKEN.sub("", tag))]
+
+
 @rule("GHL073", "Tag name built from a merge field", "medium", "hygiene",
       "data", "tags")
 def tag_minted_from_a_merge_field(acct: Account):
-    """A tag whose name is different for every contact.
+    """A tag whose name varies with the contact.
 
     Tags are a fixed vocabulary — the value of one is that thousands of
     contacts share it, which is what makes a filter, a smart list or a bulk
-    action possible. Put a contact's own data in the name and one of two things
-    happens, and both are bad: either the field resolves and every contact
-    mints its own tag, so the account ends up with thousands of one-contact
-    tags and the tag picker, the filters and every list built on them stop
-    being usable — or it does not resolve, and every contact is tagged with
-    the literal text '{{ contact.city }}'. I have not tested which HighLevel
-    does here; the fix is the same either way, because varying data belongs in
-    a field, not in a tag name.
+    action possible. Put a contact's own data in the name and the tag list
+    grows with the contact list. How badly depends entirely on how many
+    distinct values the merged field holds, and the export does not say: a
+    field with four options mints four tags, which is a build somebody meant;
+    a name, an email or a city mints one per person. So the severity follows
+    the source, and the finding on a bounded source states the risk rather
+    than asserting damage. There is a second possibility either way — that
+    HighLevel does not resolve a merge field in a tag name at all and every
+    contact gets one tag called '{{ contact.city }}'. I have not tested which
+    it does; the fix is the same, because varying data belongs in a field.
     """
     for wf in acct.published():
         for step in wf.steps:
@@ -367,28 +538,49 @@ def tag_minted_from_a_merge_field(acct: Account):
                 # and correct. Only a per-contact token mints a tag per contact.
                 if "{{" not in CUSTOM_VALUE_TOKEN.sub("", tag):
                     continue
+                sources = _merge_sources(tag)
+                unbounded = any(UNBOUNDED_MERGE.search(s) for s in sources)
                 yield _finding(
-                    "GHL073", "medium", wf,
+                    "GHL073", "medium" if unbounded else "low", wf,
                     f"Tag name contains a merge field: '{tag}'",
                     "This step applies a tag whose name is built from contact "
-                    "data, so it is a different tag for every contact who "
-                    "reaches it. Either the account accumulates one tag per "
-                    "person — after a few thousand contacts the tag list is "
-                    "unusable, and nobody can safely delete any of it because "
-                    "no one knows what still references what — or the merge "
-                    "field is not resolved there and everybody gets one tag "
-                    "named with the raw template text. Either way the "
-                    "segment this was meant to create does not exist.",
-                    "Apply a tag from a fixed list (the handful of segments "
-                    "you actually filter on) and write the varying value into "
-                    "a custom field instead. Fields are what filters, smart "
-                    "lists and reports are built on; tags are for membership, "
-                    "not for storing data.",
+                    "data, so the tag is different for every distinct value "
+                    "that field holds."
+                    + (" It is merging something close to unique per person "
+                       "(a name, an email, a town, a date), so the account "
+                       "accumulates roughly one tag per contact: after a few "
+                       "thousand of them the tag picker, the filters and "
+                       "every smart list built on tags stop being usable, and "
+                       "nobody can safely delete any of it because no one "
+                       "knows what still references what."
+                       if unbounded else
+                       " If that field holds a handful of options this is a "
+                       "small fixed set of tags and it is fine — worth "
+                       "confirming, not fixing. If it can hold free text, the "
+                       "tag list grows with the contact list and every smart "
+                       "list built on tags becomes guesswork.")
+                    + " The other possibility is that the merge field is not "
+                      "resolved in a tag name at all, and every contact ends "
+                      "up with one tag named with the raw template text — in "
+                      "which case the segment this was meant to create does "
+                      "not exist.",
+                    "Open the contact record of somebody who ran through this "
+                    "step and read the tag that landed. If it is the raw "
+                    "template text, or if the merged field is free text, "
+                    "apply a tag from a fixed list instead and write the "
+                    "varying value into a custom field. Fields are what "
+                    "filters, smart lists and reports are built on; tags are "
+                    "for membership, not for storing data.",
                     step=step.name or step.type,
                     cost="Tag lists do not recover. Once thousands of "
                          "one-contact tags exist, every bulk action and smart "
                          "list built on tags is guesswork, and cleaning it up "
-                         "costs more than the build did.")
+                         "costs more than the build did."
+                         if unbounded else
+                         "Nothing today if the field has few values. If it "
+                         "does not, the clean-up costs more than the build "
+                         "did — and the segment nobody can build in the "
+                         "meantime is the one this step was for.")
 
 
 # --------------------------------------------------------------------------
@@ -400,6 +592,17 @@ def tag_minted_from_a_merge_field(acct: Account):
 # are written for a person and an audit, and calling them dead data reads as
 # not understanding what they are for.
 CONSENT_EVIDENCE = re.compile(r"consent|opt[_ -]?in|gdpr|tcpa|compliance", re.I)
+# Fields whose whole job is to be reported on. Marketing attribution is written
+# so a human can read it on the record and a dashboard can group by it — no
+# workflow ever reads it back, and that is the design, not a defect. The live
+# account this pack was calibrated against writes 'Attribution Channel' from
+# five branch arms of a workflow called "Lead Source Attribution & Reporting",
+# and nothing reads it: reporting that as dead data would have been the pack's
+# only finding on a working account, and it would have been wrong.
+REPORTING_SURFACE = re.compile(
+    r"(?:^|_)(utm|utm_[a-z]+|attribution|referrer|referral_source|campaign|"
+    r"ad_click_id|gclid|fbclid|msclkid|landing_page|first_touch|last_touch|"
+    r"lead_source|traffic_source|channel|medium)(?:_|$)", re.I)
 
 
 def _read_blob(acct: Account) -> str:
@@ -407,7 +610,8 @@ def _read_blob(acct: Account) -> str:
 
     A field-write step naturally contains the name of the field it writes, so
     that key alone is stripped out of the step — counting it would make every
-    field its own reader and the check would never fire. The REST of the step
+    field its own reader and the check would never fire. The id it was
+    resolved from goes with it, for the same reason. The REST of the step
     stays, because a value copying one field into another, or a source-field
     key beside the target, is a read like any other. Draft workflows count as
     readers too: a field a paused build reads is not dead data, it is early.
@@ -425,10 +629,12 @@ def _read_blob(acct: Account) -> str:
                 continue
             written = _field_writes(step)
             text = slug(step.text())
-            for key, _value in written:
-                text = re.sub(_word_boundary(key), " ", text)
+            for key, _value, ident in written:
+                for token in (key, slug(ident)):
+                    if token:
+                        text = re.sub(_word_boundary(token), " ", text)
             parts.append(text)
-            parts.extend(value for _, value in written)
+            parts.extend(value for _, value, _i in written)
     parts.extend(str(v) for v in acct.custom_values.values())
     return slug(" ".join(parts))
 
@@ -445,6 +651,13 @@ def field_written_but_never_read(acct: Account):
     follow-up it was supposed to drive was never built. Only fields the
     account actually owns are considered — a write to a key that is not in the
     field list is a dangling reference, which is GHL020/GHL023's job.
+
+    Three families are never called dead, because nothing reading them back is
+    what they are FOR: the opt-out flag, consent evidence, and marketing
+    attribution. And the rest is reported at "low" with the question attached,
+    because an export carries workflows and nothing else — a smart list, a
+    dashboard column, a human reading the record, or an outside system pulling
+    the contact are all consumers this file cannot see.
     """
     inv = acct.inventory
     if not inv.has("custom_fields"):
@@ -464,23 +677,30 @@ def field_written_but_never_read(acct: Account):
         for step in wf.steps:
             if not _writes_fields(step):
                 continue
-            for key, _value in _field_writes(step):
-                writers.setdefault(key, (wf, step))
+            for key, _value, ident in _field_writes(step):
+                writers.setdefault(key, (wf, step, ident))
 
     blob = _read_blob(acct)
     for key in sorted(writers):
         if key in STANDARD_CONTACT_FIELDS or key not in inv.custom_fields:
             continue
-        if OPT_OUT_FIELD.search(key) or CONSENT_EVIDENCE.search(key):
+        if OPT_OUT_FIELD.search(key) or CONSENT_EVIDENCE.search(key) \
+                or REPORTING_SURFACE.search(key):
             continue
         # Three characters is not enough to search for: a key like "id" or
         # "mrr" matches inside unrelated words and the answer stops meaning
         # anything. Missing a short-named field is the safe direction.
         if len(key) < 4:
             continue
+        wf, step, ident = writers[key]
+        # A real export references a custom field by ID, not by key: the
+        # branch that reads this field back carries 'tqcNZQbMZYhmYwFdRrLd',
+        # not 'attribution_channel'. Checking only the key called a field with
+        # three live readers dead.
         if re.search(_word_boundary(key), blob):
             continue
-        wf, step = writers[key]
+        if ident and re.search(_word_boundary(slug(ident)), blob):
+            continue
         display = inv.custom_fields.get(key) or key
         yield _finding(
             "GHL074", "low", wf,
@@ -513,9 +733,15 @@ DATE_FIELD = re.compile(
 # "budget" is deliberately absent. On a lead form it is nearly always a
 # dropdown of written bands — "under $5k", "not sure" — so a field called
 # Budget holding text is the normal build, not a defect.
+#
+# "score" and "rating" came out for the same reason, and this one was measured:
+# the live account this pack was calibrated against has 'AI Lead Score' and
+# 'RF Lead Score', and BOTH are declared TEXT in its custom-field list, because
+# what a qualifier writes into them is "hot" / "warm" / "cold". A name-inferred
+# number check would have called two correctly built fields broken.
 NUMBER_FIELD = re.compile(
-    r"(?:^|_)(amount|total|price|revenue|score|qty|quantity|count|"
-    r"age|rating|mrr)(?:_|$)")
+    r"(?:^|_)(amount|total|price|revenue|qty|quantity|count|"
+    r"age|mrr)(?:_|$)")
 # Words that mean the field holds a LABEL for the thing, not the thing: an
 # "Age Group" is a band, a "Date Preference" is a written answer, a "Score
 # Label" is a letter grade. Every one of them is correctly a text field, and
@@ -564,37 +790,45 @@ def _parses_as_number(value: str) -> bool:
         return False
 
 
-def _unparseable(kind: str, value: str) -> str:
-    """Why this value cannot be what the field's name says it holds, or ""."""
+def _unparseable(kind: str, value: str):
+    """(what is wrong with this value, is it wrong whatever the type is).
+
+    The second half is the honest half. The field's type is inferred from its
+    NAME here, so most of these are only defects if the field really is typed —
+    a plain text field called "Follow Up Date" holds "ASAP" perfectly well.
+    Two of them are wrong either way: a first name merged into a date field is
+    the wrong datum whatever the column is, and two numeric tokens run
+    together produce a number that is neither of them.
+    """
     v = (value or "").strip()
     if not v:
-        return ""
+        return "", False
     tokens = TOKEN.findall(v)
     if tokens:
         for token in tokens:
             name = re.sub(r"[^a-z0-9_.]", "", token.strip("{} ").lower())
             if name.split(".")[-1] in TEXT_TOKEN_FIELDS:
-                return f"merges {{{{ {name} }}}}, which holds text"
+                return f"merges {{{{ {name} }}}}, which holds text", True
         rest = TOKEN.sub("", v).strip()
         # Only WORDS beside a token prove the result cannot parse. Punctuation,
         # digits and lone letters around one are how a date and a time, or a
         # currency symbol and an amount, get assembled deliberately.
         if rest and WORD.search(rest):
-            return f"glues a merge field to literal text — '{v}'"
+            return f"glues a merge field to literal text — '{v}'", False
         # Two tokens run together can only ever produce one number after
         # another, which is not the quantity either of them holds. A date
         # composed of a date token and a time token is a build somebody meant,
         # so the same shape is left alone there.
         if kind == "number" and len(tokens) > 1:
-            return f"joins {len(tokens)} merge fields together — '{v}'"
-        return ""  # what a bare token holds is not in the export
+            return f"joins {len(tokens)} merge fields together — '{v}'", True
+        return "", False  # what a bare token holds is not in the export
     if kind == "date":
         if RELATIVE_DATE.match(v) or DATE_LITERAL.match(v):
-            return ""
-        return f"is the text '{v}', which is not a date"
+            return "", False
+        return f"is the text '{v}', which is not a date", False
     if not _parses_as_number(v):
-        return f"is the text '{v}', which is not a number"
-    return ""
+        return f"is the text '{v}', which is not a number", False
+    return "", False
 
 
 @rule("GHL075", "Field written with a value its type cannot hold", "high",
@@ -609,26 +843,33 @@ def value_does_not_fit_the_field(acct: Account):
     fires, the filter never matches, the report shows a blank. The two classic
     sources are a free-text form answer wired straight into a date field, and
     the merge picker inserting the token that was highlighted rather than the
-    one that was wanted. The field's TYPE is inferred from its name, so the
-    finding says so — and a name carrying a qualifier ("Budget Range", "Date
-    Preference") is not judged at all, because that word is the field telling
-    you it holds a label rather than a value.
+    one that was wanted.
+
+    The fence around it: a GoHighLevel export does not carry a field's data
+    type where the rules can read it, so the type here is inferred from the
+    NAME and the finding says so out loud. A name carrying a qualifier
+    ("Budget Range", "Date Preference") is not judged at all, because that
+    word is the field telling you it holds a label rather than a value. And
+    the severity splits on whether the type matters: a first name merged into
+    a date field, or two numeric tokens run together, is the wrong datum
+    whatever the column is (high); free text in a field the NAME says is a
+    date is only a defect if the field really is a date (medium).
     """
     for wf in acct.published():
         for step in wf.steps:
             if not _writes_fields(step):
                 continue
-            for key, value in _field_writes(step):
+            for key, value, _ident in _field_writes(step):
                 if _phone_number_field(key):
                     continue  # numbers that are not quantities — GHL071's job
                 kind = _declared_kind(key)
                 if not kind:
                     continue
-                problem = _unparseable(kind, value)
+                problem, certain = _unparseable(kind, value)
                 if not problem:
                     continue
                 yield _finding(
-                    "GHL075", "high", wf,
+                    "GHL075", "high" if certain else "medium", wf,
                     f"'{key}' is written a value that is not a {kind}",
                     f"The field's name says it holds a {kind}, and this step "
                     f"writes a value that {problem}. A typed field refuses "
@@ -641,8 +882,15 @@ def value_does_not_fit_the_field(acct: Account):
                        "the branch comparing it against a threshold never "
                        "matches")
                     + ", the filter finds nobody, the report cell is blank. "
-                      "If this field is actually a text field the data is not "
-                      "lost, only unsortable and unreportable.",
+                    + ("The type is read from the field's NAME — an export "
+                       "does not carry it — so check the field in Settings "
+                       "-> Custom Fields first. If it is a plain text field "
+                       "the value is stored and nothing breaks today; it "
+                       "simply cannot be sorted, filtered or used to time "
+                       "anything."
+                       if not certain else
+                       "This one is the wrong value whatever the field's "
+                       "type turns out to be."),
                     f"Write a real {kind}: "
                     + ("map the free-text answer onto a date the workflow "
                        "calculates (booking date plus N days), or capture it "
@@ -669,21 +917,83 @@ BRANCHY = re.compile(r"branch|condition|split|goal|filter|switch|case|"
 
 
 def _single_path(wf: Workflow) -> bool:
-    """True when this export shows one path, in the order it is written.
+    """True when this FLAT export shows one path, in the order it is written.
 
-    A wired export (node ids and links) can carry a fork the flat step order
-    does not show, and a branch step means the two writes may be on arms that
-    never both run. In either case "the first value is dead" stops being
-    provable from the file, and this check declines rather than guesses —
-    a data rule that is wrong about which of two steps matters is worse than
-    one that stays quiet on the exports it cannot read.
+    A branch step means the two writes may be on arms that never both run, so
+    "the first value is dead" stops being provable and this check declines
+    rather than guesses — a data rule that is wrong about which of two steps
+    matters is worse than one that stays quiet on the exports it cannot read.
+    Only asked of exports with no wiring; a wired one is read link by link.
     """
-    if wf.has_wiring:
-        return False
     for step in wf.steps:
         if step.is_branch or BRANCHY.search(str(step.type or "")):
             return False
     return True
+
+
+def _next_step(wf: Workflow, step: Step, by_id: dict):
+    """The step that ALWAYS runs immediately after this one, or None.
+
+    A real GoHighLevel export is a linked list: every node carries `next`, and
+    every node carries the `parentKey` of the node above it. A fork writes
+    `next` as a LIST of branch ids, and its arms hang off it by parentKey — so
+    "exactly one successor, counting both directions" is the whole test for
+    "these two steps are adjacent on one path". Reading the flat file ORDER
+    instead is what made this check refuse every real export: the five arms of
+    one if/else all write the same field, and in file order they look like
+    five overwrites of each other.
+    """
+    ids = set(step.next_ids())
+    sid = step.step_id
+    if sid:
+        ids |= {s.step_id for s in wf.steps
+                if s.step_id and s.parent_key == sid}
+    ids = {i for i in ids if i in by_id and i != sid}
+    return by_id[ids.pop()] if len(ids) == 1 else None
+
+
+def _write_runs(wf: Workflow) -> list:
+    """Stretches of consecutive field writes with nothing between them.
+
+    Each run is a list of steps that provably run back to back, so a value
+    written in one and overwritten in a later one was never visible to
+    anything. Any other step — a wait, a message, a branch, a task — ends the
+    run, because any of them is something that could have read the value.
+    """
+    if not wf.has_wiring:
+        if not _single_path(wf):
+            return []
+        runs, current = [], []
+        for step in wf.steps:
+            if _writes_fields(step):
+                current.append(step)
+            else:
+                runs.append(current)
+                current = []
+        runs.append(current)
+        return [r for r in runs if len(r) > 1]
+
+    by_id = {s.step_id: s for s in wf.steps if s.step_id}
+    linked: dict = {}
+    for step in wf.steps:
+        if not _writes_fields(step):
+            continue
+        nxt = _next_step(wf, step, by_id)
+        if nxt is not None and _writes_fields(nxt):
+            linked[nxt.step_id] = step
+    runs = []
+    for step in wf.steps:
+        if not _writes_fields(step) or step.step_id in linked:
+            continue  # not the head of a run
+        run, cur, seen = [], step, set()
+        while cur is not None and _writes_fields(cur) \
+                and cur.step_id not in seen:
+            seen.add(cur.step_id)
+            run.append(cur)
+            cur = _next_step(wf, cur, by_id)
+        if len(run) > 1:
+            runs.append(run)
+    return runs
 
 
 @rule("GHL076", "Field set twice in a row, so the first value never exists",
@@ -705,59 +1015,59 @@ def field_overwritten_before_anything_reads_it(acct: Account):
     reported twice.
     """
     for wf in acct.published():
-        if not _single_path(wf):
-            continue
-        # field key -> (step that wrote it, value), forgotten the moment any
-        # step runs that could have read the value.
-        pending: dict = {}
-        for step in wf.steps:
-            if not _writes_fields(step):
-                pending.clear()
+        for run in _write_runs(wf):
+            yield from _scan_run(wf, run)
+
+
+def _scan_run(wf: Workflow, run: list):
+    """Findings for one stretch of back-to-back field writes."""
+    # field key -> (step that wrote it, value)
+    pending: dict = {}
+    for step in run:
+        for key, value, _ident in _field_writes(step):
+            v = (value or "").strip()
+            # An empty write is a deliberate clear, and a merge token is
+            # not a value this file knows — neither can be compared, and
+            # both mean the earlier value's fate is no longer readable.
+            if not v or TOKEN.search(v):
+                pending.pop(key, None)
                 continue
-            for key, value in _field_writes(step):
-                v = (value or "").strip()
-                # An empty write is a deliberate clear, and a merge token is
-                # not a value this file knows — neither can be compared, and
-                # both mean the earlier value's fate is no longer readable.
-                if not v or TOKEN.search(v):
-                    pending.pop(key, None)
-                    continue
-                earlier = pending.get(key)
-                pending[key] = (step, v)
-                # Two assignments inside ONE action are not evidence of order:
-                # a field list is a set of assignments and the file does not
-                # say which the platform applies last. Same value twice is a
-                # duplicated step, not a contradiction, and costs nothing.
-                if not earlier or earlier[0] is step \
-                        or earlier[1].lower() == v.lower():
-                    continue
-                first_step, first = earlier
-                yield _finding(
-                    "GHL076", "medium", wf,
-                    f"'{key}' is set to '{first}' and then '{v}' with "
-                    "nothing in between",
-                    f"Two steps write the same field one after the other — "
-                    f"'{first_step.name or first_step.type}' sets it to "
-                    f"'{first}', then '{step.name or step.type}' sets it to "
-                    f"'{v}' — with nothing in between: no wait, no message, "
-                    f"no branch. Nothing can read a value in that gap, so "
-                    f"'{first}' never reaches anybody. Every message that "
-                    "merges this field, every filter, and every person who "
-                    f"opens the contact sees '{v}'. One of the two steps is "
-                    "normally a leftover — an action duplicated during an "
-                    "edit, or half of a branch that was deleted — and either "
-                    f"way the build says contacts pass through '{first}' and "
-                    "none of them do.",
-                    "Decide which value is right and delete the other write. "
-                    "If the first one was meant to hold while something "
-                    "happened, put that step back between them — the wait, "
-                    "the call task, the message that was supposed to read it. "
-                    "Verify by running a test contact through and watching "
-                    "the field on the contact record: it should change once, "
-                    "not twice.",
-                    step=step.name or step.type,
-                    cost="Nothing goes out wrongly today; the bill arrives "
-                         "later. Anything built on the value that never "
-                         "lands — a smart list, a report, a second workflow "
-                         "watching for it — matches nobody, and the person "
-                         "who builds it will not see why.")
+            earlier = pending.get(key)
+            pending[key] = (step, v)
+            # Two assignments inside ONE action are not evidence of order:
+            # a field list is a set of assignments and the file does not
+            # say which the platform applies last. Same value twice is a
+            # duplicated step, not a contradiction, and costs nothing.
+            if not earlier or earlier[0] is step \
+                    or earlier[1].lower() == v.lower():
+                continue
+            first_step, first = earlier
+            yield _finding(
+                "GHL076", "medium", wf,
+                f"'{key}' is set to '{first}' and then '{v}' with "
+                "nothing in between",
+                f"Two steps write the same field one after the other — "
+                f"'{first_step.name or first_step.type}' sets it to "
+                f"'{first}', then '{step.name or step.type}' sets it to "
+                f"'{v}' — with nothing in between: no wait, no message, "
+                f"no branch. Nothing can read a value in that gap, so "
+                f"'{first}' never reaches anybody. Every message that "
+                "merges this field, every filter, and every person who "
+                f"opens the contact sees '{v}'. One of the two steps is "
+                "normally a leftover — an action duplicated during an "
+                "edit, or half of a branch that was deleted — and either "
+                f"way the build says contacts pass through '{first}' and "
+                "none of them do.",
+                "Decide which value is right and delete the other write. "
+                "If the first one was meant to hold while something "
+                "happened, put that step back between them — the wait, "
+                "the call task, the message that was supposed to read it. "
+                "Verify by running a test contact through and watching "
+                "the field on the contact record: it should change once, "
+                "not twice.",
+                step=step.name or step.type,
+                cost="Nothing goes out wrongly today; the bill arrives "
+                     "later. Anything built on the value that never "
+                     "lands — a smart list, a report, a second workflow "
+                     "watching for it — matches nobody, and the person "
+                     "who builds it will not see why.")

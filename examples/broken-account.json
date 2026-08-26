@@ -1609,10 +1609,10 @@
         },
         {
           "type": "update_contact_field",
-          "name": "Record how they found us",
+          "name": "Store the callback time they asked for",
           "meta": {
-            "field": "di_intake_channel",
-            "value": "web-form"
+            "field": "di_preferred_time",
+            "value": "weekday mornings"
           }
         },
         {
@@ -2828,8 +2828,8 @@
       "name": "Lead Source Detail"
     },
     {
-      "fieldKey": "contact.di_intake_channel",
-      "name": "Intake Channel"
+      "fieldKey": "contact.di_preferred_time",
+      "name": "Preferred Time"
     },
     {
       "fieldKey": "contact.di_lead_stage",
