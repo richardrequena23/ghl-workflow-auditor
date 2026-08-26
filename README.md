@@ -8,21 +8,21 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-52-19D3B0)
+![rules](https://img.shields.io/badge/rules-100-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
-Account health: 18/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
+Account health: 20/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
 
-24 workflows audited. 86 findings: 8 critical, 45 high, 22 medium, 11 low  [52 of 52 checks ran]
+68 workflows audited. 222 findings: 18 critical, 114 high, 68 medium, 22 low  [100 of 100 checks ran]
 
-  Compliance        61/100  [###############.........]  11 findings
-  Deliverability    85/100  [####################....]  4 findings
-  Routing           27/100  [######..................]  43 findings
-  Hygiene           51/100  [############............]  21 findings
-  Dead weight       89/100  [#####################...]  7 findings
+  Compliance        58/100  [##############..........]  39 findings
+  Deliverability    82/100  [####################....]  16 findings
+  Routing           31/100  [#######.................]  102 findings
+  Hygiene           56/100  [#############...........]  47 findings
+  Dead weight       91/100  [######################..]  18 findings
 
 Fix in this order — ranked by what each one costs:
   1. [GHL019] Wait for an event with no timeout — 3 messages below it never send  (Speed to Lead - 5 Minute Response)
@@ -333,10 +333,20 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **274 tests**
-in [`tests/test_rules.py`](tests/test_rules.py), run against Python 3.9–3.13 on every
-push. The shipped example account trips **all 52 rules**, and a test enforces that, so a
-rule cannot rot into never firing without the suite noticing.
+rule ships with a test that trips it **and** a test that must not trip it — **963 tests**
+in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
+account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
+exactly that, so a rule cannot rot into never firing without the suite noticing.
+
+Every rule also went through an adversarial pass whose only job was to find a *correct*
+configuration it would wrongly flag, and to feed it malformed exports — `steps: null`,
+a trigger that is a bare string, a settings value that is a list — because a traceback
+mid-audit stops the other 99 checks. What that pass found got fixed and became a
+regression test; that is most of why the suite is the size it is.
+
+**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 100 checks with the
+symptom, the fix and what each one costs. It is generated from a real run against the
+example account, so it cannot drift from the code.
 
 The calibration shows in the rules themselves: GHL017 (missing opt-out language) exempts
 appointment-triggered sequences, because a booking confirmation is a conversation the

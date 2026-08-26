@@ -1,0 +1,108 @@
+{
+  "workflows": [
+    {
+      "_id": "wf_deliv_newsletter",
+      "name": "Email Deliverability Demo - Monthly Practice Newsletter",
+      "status": "published",
+      "triggers": [
+        {"type": "form_submitted", "name": "Newsletter signup",
+         "filters": [{"field": "form_name", "value": "Deliverability Demo - Newsletter Signup"}]}
+      ],
+      "steps": [
+        {"type": "email", "name": "Newsletter - issue one",
+         "meta": {
+           "subject": "What we are seeing at the practice this month",
+           "body": "Hi there - three quick things from the practice this month. Our new hygienist starts on the 3rd, evening appointments are open again on Thursdays, and the front desk number has changed. Everything else is the same as always.\n\nExample Dental Co\n{{unsubscribe}}"
+         }},
+        {"type": "wait", "name": "Wait 30 days", "meta": {"stopOnResponse": true}},
+        {"type": "email", "name": "Newsletter - issue two",
+         "meta": {
+           "subject": "April opening hours",
+           "body": "Hi there - April hours are set. We are open late on Thursdays until the end of the month and closed over the bank holiday weekend. Call the front desk if you need a slot held for someone.\n\nExample Dental Co\n{{unsubscribe}}"
+         }}
+      ]
+    },
+    {
+      "_id": "wf_deliv_owner_inbox",
+      "name": "Email Deliverability Demo - Quote Follow Up From Owner Inbox",
+      "status": "published",
+      "triggers": [
+        {"type": "form_submitted", "name": "Quote request",
+         "filters": [{"field": "form_name", "value": "Deliverability Demo - Quote Request"}]}
+      ],
+      "steps": [
+        {"type": "email", "name": "Quote follow up - day one",
+         "meta": {
+           "fromName": "The Practice",
+           "fromEmail": "thepractice@gmail.com",
+           "subject": "Your quote from the practice",
+           "body": "Hi there - following up on the quote we put together. It is good for 14 days and covers everything we talked through in the chair.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+         }},
+        {"type": "wait", "name": "Wait 4 days", "meta": {"stopOnResponse": true}},
+        {"type": "email", "name": "Quote follow up - last note",
+         "meta": {
+           "fromName": "The Practice",
+           "fromEmail": "thepractice@gmail.com",
+           "subject": "Quick note about your quote",
+           "body": "Hi there - last note before the quote expires on Friday. Happy to walk you through the payment plan if that is the sticking point.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+         }}
+      ]
+    },
+    {
+      "_id": "wf_deliv_image_only",
+      "name": "Email Deliverability Demo - Spring Promo Image Send",
+      "status": "published",
+      "triggers": [
+        {"type": "form_submitted", "name": "Promo signup",
+         "filters": [{"field": "form_name", "value": "Deliverability Demo - Promo Signup"}]}
+      ],
+      "steps": [
+        {"type": "email", "name": "Spring promo - designed image",
+         "meta": {
+           "subject": "Spring at the practice",
+           "html": "<div style=\"text-align:center\"><a href=\"https://example.com/spring\"><img src=\"https://cdn.example.com/spring-promo.png\" width=\"600\"></a></div><p>Example Dental Co &middot; 12 Example Way, Springfield IL 62704 &middot; {{unsubscribe}}</p>"
+         }}
+      ]
+    },
+    {
+      "_id": "wf_deliv_no_reply",
+      "name": "Email Deliverability Demo - Quote Reply Request",
+      "status": "published",
+      "triggers": [
+        {"type": "form_submitted", "name": "Treatment plan request",
+         "filters": [{"field": "form_name", "value": "Deliverability Demo - Treatment Plan Request"}]}
+      ],
+      "steps": [
+        {"type": "email", "name": "Treatment plan - ask for a yes",
+         "meta": {
+           "fromName": "Example Dental Co",
+           "fromEmail": "no-reply@mail.deliverability-demo.example",
+           "subject": "Your treatment plan is ready",
+           "body": "Hi there - your treatment plan is attached and the pricing holds for 14 days. Just reply to this email with a yes and we will get you booked in for the first appointment.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+         }}
+      ]
+    },
+    {
+      "_id": "wf_deliv_spam_subject",
+      "name": "Email Deliverability Demo - Onboarding Offer Announcement",
+      "status": "published",
+      "triggers": [
+        {"type": "form_submitted", "name": "New patient enquiry",
+         "filters": [{"field": "form_name", "value": "Deliverability Demo - New Patient Enquiry"}]}
+      ],
+      "steps": [
+        {"type": "email", "name": "New patient offer",
+         "meta": {
+           "fromName": "Example Dental Co",
+           "fromEmail": "promos@send.deliverability-demo.example",
+           "subject": "CONGRATULATIONS - you have been selected for 100% FREE onboarding!!",
+           "body": "Hi there - new patient onboarding is open this month and we are covering the setup fee for the first twenty people who book. Any weekday works, just mention this note at the desk.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+         }}
+      ]
+    }
+  ],
+  "emailDomains": [
+    {"domain": "mail.deliverability-demo.example", "verified": false},
+    {"domain": "send.deliverability-demo.example", "verified": false}
+  ]
+}

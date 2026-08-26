@@ -1,0 +1,134 @@
+{
+  "workflows": [
+    {
+      "_id": "di-web-lead-intake",
+      "name": "Data Integrity Demo - Web Lead Intake",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Website enquiry form",
+          "filters": [{"field": "form_id", "value": "di-web-enquiry"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_contact_field",
+          "name": "Store the number they typed in",
+          "meta": {
+            "field": "phone",
+            "value": "({{ inbound_webhook.area_code }}) {{ inbound_webhook.line_number }}"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Record how they found us",
+          "meta": {"field": "di_intake_channel", "value": "web-form"}
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Set the follow-up date",
+          "meta": {"field": "follow_up_date", "value": "ASAP"}
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Mark them a new enquiry",
+          "meta": {"field": "di_lead_stage", "value": "new-enquiry"}
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Mark them contacted",
+          "meta": {"field": "di_lead_stage", "value": "contacted"}
+        },
+        {
+          "type": "internal_notification",
+          "name": "Ping the owner",
+          "meta": {
+            "body": "New web enquiry - {{ contact.di_lead_stage }}, follow up {{ contact.follow_up_date }}"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Welcome text",
+          "meta": {
+            "body": "Thanks for getting in touch - we'll call you shortly. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "di-dormant-reactivation",
+      "name": "Data Integrity Demo - Dormant List Reactivation",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "opportunity_status_changed",
+          "name": "Deal marked lost",
+          "filters": [
+            {"field": "status", "value": "lost"},
+            {"field": "pipeline", "value": "di-demo-pipeline"}
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_contact_field",
+          "name": "Clear DND so the win-back can go out",
+          "meta": {"field": "dnd", "value": false}
+        },
+        {
+          "type": "sms",
+          "name": "Win-back text",
+          "meta": {
+            "body": "It's been a while - we've got something new for you. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "di-repeat-buyer-sync",
+      "name": "Data Integrity Demo - Repeat Buyer Sync",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Repeat buyer form",
+          "filters": [{"field": "form_id", "value": "di-repeat-buyer"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "add_contact_tag",
+          "name": "Tag them by town",
+          "meta": {"tag": "city-{{ contact.city }}"}
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Copy the deal size across",
+          "meta": {"field": "deal_amount", "value": "{{ contact.company_name }}"}
+        },
+        {
+          "type": "internal_notification",
+          "name": "Ping the account manager",
+          "meta": {"body": "Repeat buyer - deal size {{ contact.deal_amount }}"}
+        },
+        {
+          "type": "sms",
+          "name": "Repeat buyer offer",
+          "meta": {
+            "body": "Good to have you back - here's what's new this month. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    }
+  ],
+  "customFields": [
+    {"fieldKey": "contact.di_intake_channel", "name": "Intake Channel"},
+    {"fieldKey": "contact.di_lead_stage", "name": "Lead Stage"},
+    {"fieldKey": "contact.follow_up_date", "name": "Follow Up Date"},
+    {"fieldKey": "contact.deal_amount", "name": "Deal Amount"}
+  ]
+}

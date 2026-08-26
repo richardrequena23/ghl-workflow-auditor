@@ -1,0 +1,205 @@
+{
+  "users": [
+    {"id": "usr_obs_morgan", "name": "Morgan Ellis", "active": true}
+  ],
+  "workflows": [
+    {
+      "_id": "wf_obs_fulfilment",
+      "name": "Observability Demo - Fulfilment Sync Retry",
+      "status": "published",
+      "triggers": [
+        {"type": "inbound_webhook", "name": "Order paid"}
+      ],
+      "steps": [
+        {
+          "id": "push",
+          "type": "n8n-nodes-base.httpRequest",
+          "name": "Send the order to fulfilment",
+          "typeVersion": 4,
+          "parameters": {
+            "method": "POST",
+            "url": "https://api.fulfilment-demo.example/v1/orders",
+            "sendBody": true,
+            "options": {}
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 10 minutes",
+          "meta": {"delay": "10 minutes", "stopOnResponse": true}
+        },
+        {
+          "type": "if_else",
+          "name": "attempt_count under 3?",
+          "meta": {
+            "conditions": [
+              {"field": "contact.attempt_count", "operator": "lt", "value": "3"}
+            ]
+          }
+        },
+        {
+          "type": "goto",
+          "name": "Back to the push",
+          "meta": {"targetStepId": "push"}
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_inventory",
+      "name": "Observability Demo - Inventory Push",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_tag_added", "name": "Tag added",
+         "filters": [{"tag": "obs-inventory-push"}]}
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Push inventory to the warehouse",
+          "meta": {
+            "method": "POST",
+            "url": "https://api.warehouse-demo.example/v2/inventory?api_key=Zk29fJq4Lm81PdTr03Xa7Bw5",
+            "headers": [
+              {"name": "Authorization",
+               "value": "Bearer 8f2c1d94ab7e4f0b93c6e5a2d7b41c60"}
+            ],
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Did the push come back OK?",
+          "meta": {
+            "conditions": [{"field": "response.status", "value": "200"}]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_erase",
+      "name": "Observability Demo - Data Warehouse Erase Request",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_tag_added", "name": "Tag added",
+         "filters": [{"tag": "obs-erase-request"}]}
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Remove the person from the data warehouse",
+          "meta": {
+            "method": "DELETE",
+            "url": "https://api.warehouse-demo.example/v2/people/{{contact.id}}",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Came back clean?",
+          "meta": {
+            "conditions": [{"field": "response.status", "value": "204"}]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_crm_sync",
+      "name": "Observability Demo - CRM Sync Error Branch",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_created", "name": "New contact"}
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Create the record in the accounting system",
+          "meta": {
+            "method": "PUT",
+            "url": "https://api.accounting-demo.example/v3/customers",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Sync failed?",
+          "meta": {
+            "conditions": [{"field": "response.status", "operator": "gte",
+                            "value": "400"}]
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Mark the sync as broken",
+          "meta": {"tags": ["err:obs-sync-failed"]}
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_import_alert",
+      "name": "Observability Demo - Import Stall Alert",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_tag_added", "name": "Tag added",
+         "filters": [{"tag": "err:obs-import-stalled"}]}
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell someone the import stalled",
+          "meta": {
+            "channel": "email",
+            "recipientUserId": "usr_obs_morgan",
+            "message": "The nightly import stalled for {{contact.first_name}}."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_duplicate_alert",
+      "name": "Observability Demo - Duplicate Contact Alert",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_tag_added", "name": "Tag added",
+         "filters": [{"tag": "obs-duplicate-found"}]}
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell someone we made a twin",
+          "meta": {
+            "channel": "email",
+            "recipientUserId": "usr_obs_morgan",
+            "message": "Possible duplicate contact: {{contact.email}}."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_speed_alert",
+      "name": "Observability Demo - Speed To Lead Alert",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_tag_added", "name": "Tag added",
+         "filters": [{"tag": "obs-new-lead"}]}
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell someone a lead is waiting",
+          "meta": {
+            "channel": "sms",
+            "recipientUserId": "usr_obs_morgan",
+            "message": "New lead waiting: {{contact.first_name}}."
+          }
+        }
+      ],
+      "settings": {}
+    }
+  ]
+}
