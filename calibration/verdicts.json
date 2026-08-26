@@ -1,0 +1,741 @@
+{
+  "accounts": {
+    "requena-live-aug26": {
+      "findings": 83,
+      "path": "/private/tmp/claude-501/-Users-richardrequena-Documents-CLOSE-CRM/392f0d60-6ecf-4f43-a614-041329042772/scratchpad/live-bundle-2026-08-26-1834.json",
+      "workflows": 13
+    }
+  },
+  "verdicts": {
+    "00ba9953abb55ac3": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Open an opportunity",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "030900632fec8e4f": {
+      "account": "requena-live-aug26",
+      "note": "Correctly calibrated: fires at 'low' and asks a question rather than asserting a defect.",
+      "rule": "GHL096",
+      "severity": "low",
+      "step": "",
+      "title": "Conversions are handled by 'Appointment Cancelled - Clean Up & One Rebook Ask' \u2014 confirm this cadence is in its remove list",
+      "verdict": "real",
+      "workflow": "Dead Lead Reactivation"
+    },
+    "057ae1a6e3a32e0d": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL018",
+      "severity": "low",
+      "step": "",
+      "title": "No workflow in this account adds 'job-complete'",
+      "verdict": null,
+      "workflow": "Review Request After Close"
+    },
+    "0c23ef4a8931d81f": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Advance to Nurture - wants to book",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "0cbe4d88f2facfd5": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "A1 - what happened to the quote",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Dead Lead Reactivation"
+    },
+    "0f3dc11ff80e5685": {
+      "account": "requena-live-aug26",
+      "note": "Two identical published copies really are live in the account.",
+      "rule": "GHL015",
+      "severity": "critical",
+      "step": "Review Request After Close",
+      "title": "2 identical copies of the same workflow are live",
+      "verdict": "real",
+      "workflow": "Referral Request - Two Asks, Then Stop"
+    },
+    "114d5f1c68c6b1c8": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL003",
+      "severity": "high",
+      "step": "",
+      "title": "2 outbound messages, nothing listening for a reply",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "12d558b93d7decc8": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - COLD",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "170623148e46849d": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL009",
+      "severity": "medium",
+      "step": "",
+      "title": "4 internal alerts with no guard tag",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "19fea74c3fdc600d": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - replied",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "1b540f818b4ea434": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Backup email",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Speed to Lead - 5 Minute Response"
+    },
+    "1c5f5462961a6b57": {
+      "account": "requena-live-aug26",
+      "note": "Conditions really are nested 4 deep in both workflows. A fair maintainability call at 'medium'.",
+      "rule": "GHL094",
+      "severity": "medium",
+      "step": "Did they rebook? > Not yet > Rebooked by now? > Rebooked",
+      "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+      "verdict": "real",
+      "workflow": "No Show Recovery"
+    },
+    "1c656d933f74b9e3": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Create opportunity for the human to work",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Dead Lead Reactivation"
+    },
+    "20c13aa933b4f352": {
+      "account": "requena-live-aug26",
+      "note": "All four messages use {{appointment.start_time}}, which GoHighLevel renders in the CONTACT's own timezone. Claiming the message carries 'no timezone' is misleading \u2014 the rendered text does show a time in the right zone. Should be 'low' advisory about naming the zone explicitly, or dropped.",
+      "rule": "GHL068",
+      "severity": "medium",
+      "step": "Confirmation SMS, Confirmation email, Pre-call email, 24h reminder SMS",
+      "title": "4 messages quote an appointment time with no timezone",
+      "verdict": "false_positive",
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "226a490495af5916": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Move to No-Show stage",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "No Show Recovery"
+    },
+    "252f40db94f1f987": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - no show",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "No Show Recovery"
+    },
+    "25b3fdd8e47abc30": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Move to Call Booked",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "2804dc89c06ba1da": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Ask for the review",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Review Request After Close"
+    },
+    "3f1579742bd53626": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Create opportunity",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Missed Call Text Back"
+    },
+    "3ff07c0f14cf0651": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL003",
+      "severity": "low",
+      "step": "",
+      "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
+      "verdict": null,
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "40a79033392e45cd": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Other Tracked Source",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "4348242d2d522ae3": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL018",
+      "severity": "low",
+      "step": "",
+      "title": "No workflow in this account adds 'job-complete'",
+      "verdict": null,
+      "workflow": "Referral Request - Two Asks, Then Stop"
+    },
+    "435ecd7aa3d80cf0": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Same-day rebook email",
+      "title": "3 marketing emails with no unsubscribe link",
+      "verdict": null,
+      "workflow": "No Show Recovery"
+    },
+    "4480c54d8083176e": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Create attributed opportunity",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "456ec4a588f3ca3f": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Confirmation email",
+      "title": "2 marketing emails with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "47446da89b1e0797": {
+      "account": "requena-live-aug26",
+      "note": "'Strategy Call Appointment Workflow' is complete and sitting in draft.",
+      "rule": "GHL037",
+      "severity": "medium",
+      "step": "",
+      "title": "Complete workflow, configured trigger \u2014 never published",
+      "verdict": "real",
+      "workflow": "Strategy Call Appointment Workflow"
+    },
+    "4c39c9e3d8df221e": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "Tag as ai-hot",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "4c81d27b2ef1340d": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL018",
+      "severity": "low",
+      "step": "",
+      "title": "No workflow in this account adds 'ai-qualify'",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "572ac0873b0a0aa2": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "AI - Classify This Reply",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "6764a6eacb124ac6": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL029",
+      "severity": "high",
+      "step": "Last touch",
+      "title": "1 message can fire at any hour of the night",
+      "verdict": null,
+      "workflow": "Missed Call Text Back"
+    },
+    "7017916d1b7d5d54": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Advance to Nurture - question",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "74358dedee1307ca": {
+      "account": "requena-live-aug26",
+      "note": "'Review Link' custom value is still the literal placeholder.",
+      "rule": "GHL008",
+      "severity": "high",
+      "step": "Review Link",
+      "title": "Custom value 'Review Link' is still a placeholder",
+      "verdict": "real",
+      "workflow": "(custom values)"
+    },
+    "79d5afd78e193ee5": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Facebook Ads",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "7cbb5c71dd9cd254": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Create opportunity",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Speed to Lead - 5 Minute Response"
+    },
+    "85a7475fe20e7c00": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "Tag as ai-warm",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "88890f541b940b41": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "Live lead - AI reads the reply",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "8c4501dcdb3bfca3": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Rebook ask email",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
+    },
+    "8fb1b0bb33ceeaa8": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Confirmation email",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "934f4656d910516e": {
+      "account": "requena-live-aug26",
+      "note": "Conditions really are nested 4 deep in both workflows. A fair maintainability call at 'medium'.",
+      "rule": "GHL094",
+      "severity": "medium",
+      "step": "Where are they in the journey? > Live lead - AI reads the reply > Route by reply intent > BOOKING - they want a time",
+      "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "94d1f8b152b56a9f": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - REVIEW",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "968d1e26e5d02088": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL010",
+      "severity": "medium",
+      "step": "Ask 2 - one line nudge",
+      "title": "Suppression tags are checked before the wait, never after",
+      "verdict": null,
+      "workflow": "Referral Request - Two Asks, Then Stop"
+    },
+    "983ca4c9e30b2754": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Ask for the review",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Review Request After Close"
+    },
+    "9c7680f0348e2f71": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Backup email",
+      "title": "2 marketing emails with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Speed to Lead - 5 Minute Response"
+    },
+    "9f346fdf232a7524": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "Tag as ai-cold",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "ab01e6f7ccd70f23": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - cancelled",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
+    },
+    "ae17d7c0b1171fc2": {
+      "account": "requena-live-aug26",
+      "note": "Correctly calibrated: fires at 'low' and asks a question rather than asserting a defect.",
+      "rule": "GHL096",
+      "severity": "low",
+      "step": "",
+      "title": "Conversions are handled by 'Appointment Cancelled - Clean Up & One Rebook Ask' \u2014 confirm this cadence is in its remove list",
+      "verdict": "real",
+      "workflow": "Missed Call Text Back"
+    },
+    "b3046e14b31327a2": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Google Ads",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "b48410e89b9c835c": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - HOT",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "b48d4b379654a092": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Advance to Nurture - objection",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "b49a200d4dd01ae2": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Follow up by email",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Missed Call Text Back"
+    },
+    "b536ef9f57637ae7": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "AI - Score This Lead",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "b5db6e4650b6778e": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Send the booking link by email",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "bb7507b41ca86c34": {
+      "account": "requena-live-aug26",
+      "note": "Factually correct \u2014 no published workflow starts on an email bounce or complaint trigger. Severity 'high' is arguably steep for a platform that does baseline suppression, but the gap is real.",
+      "rule": "GHL061",
+      "severity": "high",
+      "step": "AI Lead Qualification - Score, Route & Sync, Appointment Cancelled - Clean Up & One Rebook Ask, Dead Lead Reactivation, +7 more",
+      "title": "10 workflows send email and nothing handles a bounce or a complaint",
+      "verdict": "real",
+      "workflow": "(account)"
+    },
+    "bcb08f8d1272c936": {
+      "account": "requena-live-aug26",
+      "note": "'Review Link' custom value is still the literal placeholder.",
+      "rule": "GHL008",
+      "severity": "high",
+      "step": "Integration Webhook URL",
+      "title": "Custom value 'Integration Webhook URL' is still a placeholder",
+      "verdict": "real",
+      "workflow": "(custom values)"
+    },
+    "c8d95f98099f45a2": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL003",
+      "severity": "low",
+      "step": "",
+      "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "ca12eaf203fa7802": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL029",
+      "severity": "high",
+      "step": "Instant reply SMS",
+      "title": "2 messages can fire at any hour of the night",
+      "verdict": null,
+      "workflow": "Speed to Lead - 5 Minute Response"
+    },
+    "ca5affe2b5ab8ce0": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL010",
+      "severity": "medium",
+      "step": "Nudge with the link",
+      "title": "Suppression tags are checked before the wait, never after",
+      "verdict": null,
+      "workflow": "Review Request After Close"
+    },
+    "dca2c3d39f742991": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Follow up by email",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Missed Call Text Back"
+    },
+    "dcd491f3c9632e0d": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - WARM",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "de8bfc7a0b0b1be0": {
+      "account": "requena-live-aug26",
+      "note": "The SMS signs off '- {{user.first_name}}', a person's name, with no business identification. Legitimate 10DLC point, though the rule assumes it is the opening message.",
+      "rule": "GHL057",
+      "severity": "medium",
+      "step": "Booking nudge SMS",
+      "title": "Opening text arrives from an unknown number with no business name in it",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "e5d4d94cbf3be3f3": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "A1 - what happened to the quote",
+      "title": "5 marketing emails with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Dead Lead Reactivation"
+    },
+    "e87e089f4ee77b20": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Ask 1 - who else needs this",
+      "title": "Greeting renders as 'Hi ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "Referral Request - Two Asks, Then Stop"
+    },
+    "e92d4d03f4541555": {
+      "account": "requena-live-aug26",
+      "note": "Confirmed independently: the sub-account genuinely has no SMS-capable number (his own notes record the same A2P blocker). Every SMS step fails silently.",
+      "rule": "GHL031",
+      "severity": "critical",
+      "step": "10 workflows send SMS",
+      "title": "No SMS-capable number in the location \u2014 every SMS step fails silently",
+      "verdict": "real",
+      "workflow": "(account)"
+    },
+    "f0a39df155a77227": {
+      "account": "requena-live-aug26",
+      "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
+      "rule": "GHL016",
+      "severity": "medium",
+      "step": "Same-day rebook email",
+      "title": "Greeting renders as 'Hey ,' when first_name is empty",
+      "verdict": "real",
+      "workflow": "No Show Recovery"
+    },
+    "f26f3bf3ff627410": {
+      "account": "requena-live-aug26",
+      "note": "8 workflows create opportunities on the pipeline and nothing ever moves or closes one. Verified in the step list.",
+      "rule": "GHL099",
+      "severity": "medium",
+      "step": "Dead Lead Reactivation, Lead Source Attribution & Reporting, Missed Call Text Back, No Show Recovery, Reply Handler - Route, Stop Nurture, Alert, Speed to Lead - 5 Minute Response, Strategy Call - Booking & Confirmation v2",
+      "title": "'Coaching Sales Pipeline' is filled by automation and moved by nobody",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "f4d83d1f46688246": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL007",
+      "severity": "low",
+      "step": "Create Opportunity in Coaching Sales Pipeline",
+      "title": "'create_opportunity' is deprecated",
+      "verdict": null,
+      "workflow": "Strategy Call Appointment Workflow"
+    },
+    "f823fe10d3350d83": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "Route by AI score",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "f86188e1088ac434": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Ask 1 - who else needs this",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": null,
+      "workflow": "Referral Request - Two Asks, Then Stop"
+    },
+    "fb1c326ec38497eb": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Booking nudge email",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "fbee8d2aea30b7f1": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - YouTube Ads",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "ff8b1f5739b807d6": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL039",
+      "severity": "medium",
+      "step": "Dead Lead Reactivation, Lead Source Attribution & Reporting, Missed Call Text Back, No Show Recovery, Reply Handler - Route, Stop Nurture, Alert, Speed to Lead - 5 Minute Response, Strategy Call - Booking & Confirmation v2",
+      "title": "8 workflows each create an opportunity on 'Coaching Sales Pipeline'",
+      "verdict": null,
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "ffc3f0c6fb12eabe": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Direct / Unknown",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "ffeece673c50f21a": {
+      "account": "requena-live-aug26",
+      "note": "",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - booked",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": null,
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    }
+  }
+}

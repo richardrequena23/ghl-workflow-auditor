@@ -27,6 +27,23 @@ MINE = {"GHL059", "GHL060", "GHL061", "GHL062", "GHL063", "GHL064"}
 # defect rather than on every email that happens to be short.
 FOOTER = "\n\nExample Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
 
+# GHL059 refuses to run unless the account's email configuration was supplied,
+# because in GoHighLevel the postal address normally lives in the location-level
+# footer and not in any workflow's step bodies. Without that context, "no address
+# in the body" is not evidence of anything — measured on a real account it fired
+# on nine of the eleven workflows that send email, i.e. all of them. So every
+# test expecting GHL059 to FIRE has to hand it this context first.
+#
+# This blob deliberately carries NO address, leaving the message bodies as the
+# only place left to look — which is the situation the rule is actually for.
+EMAIL_ACCOUNT = {"emailSettings": {"fromName": "Example Co",
+                                   "fromEmail": "hello@example.com"}}
+# The same account with the address where it belongs. Configured this way it is
+# compliant whatever the individual step bodies say.
+EMAIL_ACCOUNT_WITH_ADDRESS = {"emailSettings": {
+    "fromName": "Example Co",
+    "footer": "Example Co, 12 Example Way, Springfield IL 62704"}}
+
 
 def bundle(workflows, custom_values=None, **extra):
     data = {"workflows": workflows, "customValues": custom_values or {}}
@@ -90,8 +107,28 @@ class PostalAddressInFooter(unittest.TestCase):
 
     def test_marketing_sequence_with_no_address(self):
         steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
-        self.assertIn("GHL059", rules_hit([wf("Newsletter", steps,
+        self.assertIn("GHL059", rules_hit([wf("Newsletter", steps, TAG_TRIGGER)],
+                                          **EMAIL_ACCOUNT))
+
+    def test_it_skips_when_the_account_email_config_was_not_supplied(self):
+        """The case that made this rule unusable on real exports.
+
+        A GoHighLevel account keeps its postal address in the location footer,
+        not in each workflow. Given no email config, the rule cannot tell a
+        missing address from one it simply cannot see — so it must skip and say
+        so, never assert a federal violation."""
+        steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
+        self.assertNotIn("GHL059", rules_hit([wf("Newsletter", steps,
+                                                 TAG_TRIGGER)]))
+        self.assertIn("GHL059", skips_hit([wf("Newsletter", steps,
                                               TAG_TRIGGER)]))
+
+    def test_an_address_in_the_account_footer_clears_every_workflow(self):
+        """Where the address belongs. Bodies need not repeat it."""
+        steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
+        hit = rules_hit([wf("Newsletter", steps, TAG_TRIGGER)],
+                        **EMAIL_ACCOUNT_WITH_ADDRESS)
+        self.assertNotIn("GHL059", hit)
 
     def test_a_street_address_in_the_footer_clears_it(self):
         steps = [email("One", self.LONG + FOOTER), wait(),
@@ -122,7 +159,8 @@ class PostalAddressInFooter(unittest.TestCase):
     def test_a_sequence_off_a_form_trigger_is_still_marketing(self):
         steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
         self.assertIn("GHL059", rules_hit([wf("Enquiry Nurture", steps,
-                                              FORM_TRIGGER)]))
+                                               FORM_TRIGGER)],
+                                          **EMAIL_ACCOUNT))
 
     def test_config_can_mark_a_workflow_transactional(self):
         steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
@@ -141,7 +179,8 @@ class PostalAddressInFooter(unittest.TestCase):
     def test_reach_is_the_number_of_emails(self):
         steps = [email("One", self.LONG), wait(), email("Two", self.LONG),
                  {"type": "sms", "name": "Nudge", "meta": {"body": "hi"}}]
-        found = findings_for("GHL059", [wf("Newsletter", steps, TAG_TRIGGER)])
+        found = findings_for("GHL059", [wf("Newsletter", steps, TAG_TRIGGER)],
+                             **EMAIL_ACCOUNT)
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].reach, 2)
 

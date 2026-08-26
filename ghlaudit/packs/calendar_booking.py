@@ -17,9 +17,14 @@ deliberately excluded below.
 
 Booking copy is also where a careless regex does the most damage, because the
 same words appear in correct messages: a cancellation policy says "24 hours
-before your appointment", a confirmation quotes a "no-show fee", an address
-says "see you at". Each check below therefore reads copy in sentences and only
-after the STRUCTURE of the workflow has established what kind of lane it is.
+before your appointment", a confirmation quotes a "no-show fee", a win-back
+campaign opens "we missed you", an errand promises the forms "in a day or
+two", an address says "see you at". Each check below therefore reads copy in
+sentences and only after the STRUCTURE of the workflow has established what
+kind of lane it is — and a structural read is held to the same standard: a
+duration wait a builder happened to name after the appointment is a duration
+wait, and a twenty-character word in a booking URL is a slug until its shape
+says otherwise. Where the export cannot settle it, these rules stay quiet.
 """
 
 from __future__ import annotations
@@ -79,6 +84,14 @@ _BEFORE_WORDS = ("before", "prior", "ahead")
 _DURATION_KEYS = ("delay", "duration", "waitduration", "timedelay", "waittime",
                   "delayamount", "waitfor")
 
+# Keys whose VALUE declares what a wait is measured against. A step typed
+# `event_start_wait`, or one carrying "waitType": "appointment_time", has said
+# out loud that it is anchored to the slot; a duration wait that merely
+# mentions an appointment in its label has not.
+_ANCHOR_DECLARING_KEYS = ("waittype", "waitfor", "waituntil", "mode", "resumeon",
+                          "anchor", "anchoredto", "relativeto", "reference",
+                          "referencefield", "basedon", "eventtype")
+
 
 def _to_minutes(value, unit):
     """Magnitude only — direction is always carried separately and signed on."""
@@ -135,6 +148,11 @@ def _offset_from_string(text: str) -> float | None:
     return None  # a duration with no stated direction says nothing
 
 
+# Keys a wait uses to name its unit. `type` is last-resort and overloaded, but
+# it is what GoHighLevel actually writes — see the comment in _offset_from_dict.
+_UNIT_KEYS = ("unit", "units", "period", "unittype", "interval", "type")
+
+
 def _offset_from_dict(node: dict) -> float | None:
     """A signed appointment offset declared by one dict, or None."""
     keys = {_nk(k): k for k in node}
@@ -153,7 +171,10 @@ def _offset_from_dict(node: dict) -> float | None:
     for nk, real in keys.items():
         m = re.fullmatch(
             r"(second|sec|minute|min|hour|hr|day|week)s?(before|after)", nk)
-        if m:
+        # `{"hoursBefore": true}` is a flag somebody wrote badly, not one hour.
+        # float(True) is 1.0, so without this the export gets a lead time it
+        # never stated.
+        if m and not isinstance(node[real], bool):
             minutes = _to_minutes(node[real], m.group(1))
             if minutes is not None:
                 return -minutes if m.group(2) == "before" else minutes
@@ -176,10 +197,29 @@ def _offset_from_dict(node: dict) -> float | None:
             direction = node[keys[nk]].strip().lower()
             break
 
-    # {"value": 24, "unit": "hours", "direction": "before"}
-    if "value" in keys and any(u in keys for u in ("unit", "units", "period")):
-        unit_key = next(keys[u] for u in ("unit", "units", "period") if u in keys)
-        minutes = _to_minutes(node[keys["value"]], node[unit_key])
+    # {"value": 24, "unit": "hours", "direction": "before"} — and the shape a
+    # REAL GoHighLevel export uses, which is
+    # {"when": "before", "type": "hours", "value": 24, "action_in": 0}.
+    #
+    # `type` has to be in this list. It is an overloaded key, and leaving it out
+    # is precisely what made every hour-based rung of a reminder ladder
+    # unreadable. Measured against Richard's live account on Aug-26: "Wait until
+    # 24h before" and "Wait until 1h before" both parsed to an offset of None,
+    # the ladder collapsed to its one minutes-based rung, and GHL070 reported a
+    # textbook 24h/1h/10min ladder as "one reminder, ten minutes out, and
+    # nothing earlier" — a false positive on the best-built workflow in the
+    # account. Fixture tests never caught it because the fixtures were written
+    # in the {"unit": ...} shape the parser already understood.
+    #
+    # Accepting it is safe because _to_minutes() returns None for anything that
+    # is not a real unit, so the far more common {"type": "appointment"} and
+    # {"type": "email"} fall through instead of inventing a lead time. We try
+    # every candidate rather than the first present one, so a node carrying both
+    # {"type": "appointment"} and {"unit": "hours"} still resolves.
+    for unit_nk in _UNIT_KEYS:
+        if "value" not in keys or unit_nk not in keys:
+            continue
+        minutes = _to_minutes(node[keys["value"]], node[keys[unit_nk]])
         if minutes is not None and direction:
             return -minutes if any(w in direction for w in _BEFORE_WORDS) \
                 else minutes
@@ -244,6 +284,57 @@ def _has_plain_duration(cfg: dict) -> bool:
     return False
 
 
+def _declares_anchor(step: Step, cfg: dict) -> bool:
+    """Does this step SAY it is an appointment wait, or merely mention one?
+
+    The distinction decides whether a configured duration is allowed to
+    outrank the word "appointment" appearing somewhere in the step. Builders
+    name drip waits for the thing they follow — "Wait 1 day after the
+    appointment is booked" is an ordinary duration wait — and reading that
+    label as a slot anchor reported a reversed ladder on a correct one.
+    """
+    nt = _nk(step.type)
+    if "eventstartwait" in nt or "appointment" in nt:
+        return True
+    for key, value in cfg.items():
+        if _nk(key) in _ANCHOR_DECLARING_KEYS and isinstance(value, str) \
+                and _ANCHOR_WORDS.search(value):
+            return True
+    return False
+
+
+def _declares_direction(cfg) -> bool:
+    """Is a before/after direction written anywhere in these settings?
+
+    A wait that names a direction is measuring against a fixed moment, even
+    when the magnitude beside it is in a shape nothing here can read. Only a
+    step with no direction anywhere may be demoted to a plain duration.
+    """
+    found = [False]
+
+    def walk(node):
+        if found[0]:
+            return
+        if isinstance(node, dict):
+            for key, value in node.items():
+                nk = _nk(key)
+                if nk in _DIRECTION_KEYS or nk in _BEFORE_KEYS \
+                        or nk in _AFTER_KEYS \
+                        or re.fullmatch(r"(?:second|sec|minute|min|hour|hr|day|"
+                                        r"week)s?(?:before|after)", nk) \
+                        or re.fullmatch(r"offset(?:second|sec|minute|min|hour|"
+                                        r"hr|day|week)s?", nk):
+                    found[0] = True
+                    return
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(cfg)
+    return found[0]
+
+
 def _appointment_offset(step: Step):
     """(anchored, signed minutes) for a wait measured against the appointment.
 
@@ -263,6 +354,15 @@ def _appointment_offset(step: Step):
 
     anchored = bool(_ANCHOR_WORDS.search(blob)) \
         or "eventstartwait" in _nk(step.type)
+    # A configured "wait N units" with no direction on it counts from
+    # enrollment, whatever the label says about appointments. Demoting it here
+    # is what keeps "Wait 1 day after the appointment is booked" out of the
+    # reminder ladder — read as +1 day from the SLOT it made every correct
+    # ladder underneath it look reversed.
+    if anchored and not _declares_anchor(step, cfg) \
+            and _has_plain_duration(cfg) and _scan_offset(cfg) is None \
+            and not _declares_direction(cfg):
+        anchored = False
     phrase = _RELATIVE_PHRASE.search(step.name) or _RELATIVE_PHRASE.search(blob)
     if phrase and not anchored:
         # A label is only proof of anchoring when it counts BACKWARDS. Nothing
@@ -292,26 +392,11 @@ def _appointment_triggers(wf: Workflow) -> list:
             if re.search(r"appointment|appt|booked", t.type, re.I)]
 
 
-def _is_booking_lane(wf: Workflow) -> bool:
-    """Is this workflow about a booked slot at all?
-
-    Copy alone cannot answer it. "Sorry we missed your call" is no-show copy in
-    a reminder ladder and correct speed-to-lead copy in a missed-call text-back
-    — the sentence is identical and only the lane tells them apart. So the lane
-    has to be established from structure: an appointment trigger, a wait
-    anchored to the slot, or a step that names a calendar.
-    """
-    if _appointment_triggers(wf):
-        return True
-    for step in wf.steps:
-        if _appointment_offset(step)[0]:
-            return True
-        try:
-            if any(kind == "calendar" for kind, _ in step.entity_refs()):
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
+# Statuses that only exist once the appointment is behind the contact. A lane
+# entered on one of them has no reminders in it to get wrong and no
+# still-future appointment to contradict.
+_PAST_STATUS = re.compile(
+    r"no[- _]?show|showed|attended|complete|cancel", re.I)
 
 
 def _trigger_blob(triggers) -> str:
@@ -366,6 +451,31 @@ def _parent_map(wf: Workflow) -> dict:
     return out
 
 
+def _wait_ancestors(wf: Workflow, parents: dict, step: Step) -> list:
+    """The waits that actually hold this step back, on a wired export.
+
+    Where the builder recorded links, the step LIST is not the running order —
+    branch children are flattened into it in whatever order they were saved.
+    Reading "the waits above it in the file" then credits a send with a wait
+    from a branch it never runs through, or misses the one that does hold it.
+    Walking the ancestry answers it properly; a flat export has no ancestry to
+    walk and falls back to file order.
+    """
+    by_id: dict = {}
+    for other in wf.steps:
+        by_id.setdefault(other.step_id, other)
+    out: list = []
+    seen: set = set()
+    current = parents.get(step.step_id)
+    while current and current not in seen:
+        seen.add(current)
+        held = by_id.get(current)
+        if held is not None and held.is_wait:
+            out.append(held)
+        current = parents.get(current)
+    return out
+
+
 def _runs_after(parents: dict, later: Step, earlier: Step) -> bool:
     seen = set()
     current = parents.get(later.step_id)
@@ -395,10 +505,16 @@ def _provably_sequential(wf: Workflow, parents: dict, first_index: int,
 
 
 def _human(minutes: float) -> str:
-    """'24 hours', '15 minutes' — for a symptom a business owner reads."""
+    """'24 hours', '15 minutes' — for a symptom a business owner reads.
+
+    Days only past the two-day mark. Nobody labels a reminder "1 day before";
+    they write "24 hours", and a finding the client cannot match to the words
+    on their own step is a finding they have to go looking for.
+    """
     span = abs(minutes)
-    for unit, factor in (("day", 1440.0), ("hour", 60.0), ("minute", 1.0)):
-        if span >= factor:
+    for unit, factor, floor in (("day", 1440.0, 2880.0), ("hour", 60.0, 60.0),
+                                ("minute", 1.0, 1.0)):
+        if span >= floor:
             count = span / factor
             shown = int(count) if abs(count - round(count)) < 0.01 else round(count, 1)
             return f"{shown} {unit}{'s' if shown != 1 else ''}"
@@ -439,20 +555,48 @@ _REMINDER_LABEL = re.compile(
     r"(?:before|prior|ahead|out)\b", re.I)
 
 
+# A sentence that puts the meeting and the time together with a verb between
+# them: "your call is tomorrow", "the session starts in 1 hour". This is the
+# only shape strong enough to outrank the errand test below.
+_APPT_IS_WHEN = re.compile(
+    r"\b(?:appointments?|appts?|calls?|sessions?|meetings?|consult\w*|demos?|"
+    r"slots?|visits?|bookings?)\b[^.\n]{0,28}?"
+    r"\b(?:is|are|'s|starts?|starting|begins?|kicks off|happens|takes place|"
+    r"will be)\b[^.\n]{0,20}?"
+    r"(?:tomorrow|in (?:an?|\d+) ?(?:hours?|minutes?|mins?|days?)|coming up)",
+    re.I)
+
+# Verbs that mean the time claim belongs to a MESSAGE, not to the meeting.
+# "We'll email the forms for your session in a day or two" and "reply and
+# we'll call you back in 2 hours" both name a meeting and a time and are not
+# reminders; the errand verb is what separates them from copy that is.
+_ERRAND = re.compile(
+    r"\b(?:send|sends|sending|sent|email|emails|emailing|mail|deliver\w*|"
+    r"ship\w*|arrives?|arriving|post|hear from|get back|reach out|"
+    r"contact you|call (?:you|them|us) back|text (?:you|them) back|"
+    r"reply|respond|invoice|charge[ds]?|refund)\b", re.I)
+
+
 def _claims_when_the_appointment_is(text: str) -> bool:
     """Does this copy tell the contact when their appointment is?
 
-    Sentence-scoped, and the sentence has to name the meeting. Without that,
-    "give us 24 hours before your appointment" (a cancellation policy), "see
-    you at 4400 Main Street" (an address) and "we will email the forms in a day
-    or two" (paperwork) all read as reminders — three correct messages reported
-    as a critical fault.
+    Sentence-scoped, and the sentence has to be ABOUT the meeting rather than
+    merely mention it. Without that, "give us 24 hours before your
+    appointment" (a cancellation policy), "see you at 4400 Main Street" (an
+    address) and "we will email the forms for your session in a day or two"
+    (paperwork) all read as reminders — three correct messages reported as a
+    critical fault. The errand test is overridden by an explicit "your call is
+    tomorrow", so "we'll send you a reminder — your call is tomorrow at 2" is
+    still read as what it is.
     """
     for sentence in _sentences(text):
-        if _SELF_EVIDENT_CLAIM.search(sentence):
+        if _SELF_EVIDENT_CLAIM.search(sentence) or _APPT_IS_WHEN.search(sentence):
             return True
-        if _TIME_CLAIM.search(sentence) and _APPT_NOUN.search(sentence):
-            return True
+        if not (_TIME_CLAIM.search(sentence) and _APPT_NOUN.search(sentence)):
+            continue
+        if _ERRAND.search(sentence):
+            continue
+        return True
     return False
 
 
@@ -473,17 +617,19 @@ def reminder_timed_off_the_booking(acct: Account):
         appts = _appointment_triggers(wf)
         if not appts:
             continue
-        blob = _trigger_blob(appts)
-        # The cancellation and no-show lanes are not reminder ladders — their
-        # appointment is already behind them. GHL028 and GHL069 own those.
-        if re.search(r"cancel|no[- _]?show", blob):
+        # A lane entered once the appointment is behind the contact —
+        # cancelled, no-showed, showed, completed — contains no reminders to
+        # get wrong. GHL028 and GHL069 own those lanes, and a post-appointment
+        # check-in labelled "3 days out" is not a reminder ladder.
+        if _PAST_STATUS.search(_trigger_blob(appts)):
             continue
+        parents = _parent_map(wf) if wf.has_wiring else {}
         waits: list[Step] = []
         for step in wf.steps:
             if step.is_wait:
                 waits.append(step)
                 continue
-            if not step.is_outbound or not waits:
+            if not step.is_outbound:
                 continue
             try:
                 body = step.bodies()
@@ -492,7 +638,10 @@ def reminder_timed_off_the_booking(acct: Account):
             if not (_claims_when_the_appointment_is(body)
                     or _REMINDER_LABEL.search(step.name)):
                 continue
-            if any(_appointment_offset(w)[0] for w in waits):
+            held_by = _wait_ancestors(wf, parents, step) if parents else waits
+            if not held_by:
+                continue  # nothing delays it, so nothing mis-times it
+            if any(_appointment_offset(w)[0] for w in held_by):
                 continue
             yield _finding(
                 "GHL065", "critical", wf,
@@ -544,7 +693,12 @@ def reminder_offsets_run_backwards(acct: Account):
             continue
         parents = _parent_map(wf) if wf.has_wiring else {}
         for (pi, prev, before), (i, step, after) in zip(ladder, ladder[1:]):
-            if after > before:
+            # Strictly earlier only. Two waits on the SAME moment — an SMS and
+            # an email both timed 24 hours out — release together, which is
+            # what that builder wanted; there is no moment in the past for the
+            # second one to wait for, and the finding below would describe a
+            # sequence that is not there.
+            if after >= before:
                 continue
             if not _provably_sequential(wf, parents, pi, i, prev, step):
                 continue
@@ -586,12 +740,17 @@ _GHL_BOOKING_WIDGET = re.compile(
     r"https?://[^\s/]+/widget/(?:booking|bookings|appointment)/"
     r"([A-Za-z0-9_-]{4,})", re.I)
 
-# A HighLevel object id: base62, no separators, twenty-odd characters. The
-# widget path also accepts a human-readable slug, and a slug cannot be checked
-# against a list of ids — calling `book.theclient.com/widget/booking/discovery`
-# a dead calendar because "discovery" is not an id would be a guess, and a
-# loud one. Only id-shaped tokens are judged.
-_GHL_OBJECT_ID = re.compile(r"^[A-Za-z0-9]{18,}$")
+# A HighLevel object id, in the two shapes the platform actually issues:
+# mixed-case base62 of twenty-odd characters, or a 24-character hex ObjectId.
+# The widget path also accepts a human-readable slug, and a slug cannot be
+# checked against a list of ids — calling
+# `book.theclient.com/widget/booking/freeconsultationcall` a dead calendar
+# because that word is not in the id list would be a guess, and a loud one at
+# critical. Length alone does not separate them: "freeconsultationcall" is
+# twenty characters. Case does — a hand-typed slug is never mixed-case.
+_MIXED_CASE_ID = re.compile(
+    r"^(?=[A-Za-z0-9]*[A-Z])(?=[A-Za-z0-9]*[a-z])[A-Za-z0-9]{18,}$")
+_HEX_OBJECT_ID = re.compile(r"^[0-9a-f]{24}$")
 
 # Third-party schedulers, by host. Only unambiguous ones: a Google Calendar
 # link can be a hundred things, an acuityscheduling.com link is exactly one.
@@ -601,6 +760,27 @@ _EXTERNAL_SCHEDULER = re.compile(
     r"youcanbook\.me|tidycal\.com|oncehub\.com|scheduleonce\.com|"
     r"setmore\.com|simplybook\.me|zcal\.co|appointlet\.com|chilipiper\.com|"
     r"meetings\.hubspot\.com|vcita\.com|booksy\.com)", re.I)
+
+# The same domains serve their own help centre. A link to a support article
+# about rescheduling is not a booking link, and reporting it as one is the
+# kind of finding that gets the whole section skimmed past.
+_DOCS_SUBDOMAIN = re.compile(
+    r"^(?:help|support|docs?|blog|status|developer|community|about)\.", re.I)
+
+
+def _looks_like_an_id(token: str) -> bool:
+    return bool(_MIXED_CASE_ID.match(token) or _HEX_OBJECT_ID.match(token))
+
+
+def _external_scheduler(link: str) -> str:
+    """The scheduler host this link books on, or "" if it books nothing."""
+    match = _EXTERNAL_SCHEDULER.search(link)
+    if not match:
+        return ""
+    host = match.group(0).split("//", 1)[-1].split("/", 1)[0]
+    if _DOCS_SUBDOMAIN.match(host):
+        return ""
+    return match.group(1).lower()
 
 
 @rule("GHL067", "Booking link bypasses this account's calendar", "high",
@@ -618,9 +798,12 @@ def booking_link_bypasses_the_calendar(acct: Account):
     """
     inv = acct.inventory
     widget_hits: list = []
-    seen_hosts: set = set()
 
     for wf in acct.published():
+        # One scheduler is one defect in this workflow, however many messages
+        # carry the link. A normal email holds it three times — button, body,
+        # footer — and three identical findings is how a report loses a reader.
+        external: dict = {}
         for step in wf.outbound:
             try:
                 body = step.bodies()
@@ -629,40 +812,41 @@ def booking_link_bypasses_the_calendar(acct: Account):
             for link in URL.findall(body):
                 widget = _GHL_BOOKING_WIDGET.search(link)
                 if widget:
-                    if _GHL_OBJECT_ID.match(widget.group(1)):
+                    if _looks_like_an_id(widget.group(1)):
                         widget_hits.append((wf, step, widget.group(1)))
                     continue
-                external = _EXTERNAL_SCHEDULER.search(link)
-                if not external:
+                host = _external_scheduler(link)
+                if not host:
                     continue
-                # The same booking link appears three times in a normal email —
-                # button, body copy, footer. One defect, one finding.
-                host = external.group(1).lower()
-                key = (wf.name, step.name or step.type, host)
-                if key in seen_hosts:
-                    continue
-                seen_hosts.add(key)
-                yield _finding(
-                    "GHL067", "high", wf,
-                    f"Booking link sends contacts to {host}, outside this "
-                    "account",
-                    "This message hands the contact a third-party booking "
-                    "link, so the appointment is created outside HighLevel. "
-                    "Nothing in this account ever learns about it: no "
-                    "appointment trigger fires, no confirmation goes out, the "
-                    "reminder ladder never runs, no-show recovery never runs, "
-                    "and the booking does not appear in any report the client "
-                    "reads. The bookings still happen — they are just "
-                    "invisible to every automation built to protect them.",
-                    "Point the link at this location's calendar (the booking "
-                    "widget link from Calendars, held in a custom value so it "
-                    "is changed in one place), and keep the third-party "
-                    "calendar only as a synced source of busy time.",
-                    step=step.name or step.type,
-                    cost="Every appointment booked through this link runs with "
-                         "no reminders and no follow-up, and never shows up in "
-                         "the numbers. The no-show rate on them is whatever it "
-                         "was before you had automation at all.")
+                label = step.name or step.type
+                named = external.setdefault(host, [])
+                if label not in named:
+                    named.append(label)
+        for host, named in external.items():
+            many = len(named) != 1
+            yield _finding(
+                "GHL067", "high", wf,
+                f"Booking link sends contacts to {host}, outside this "
+                "account",
+                (f"{len(named)} messages in this workflow hand"
+                 if many else "This message hands")
+                + " the contact a third-party booking "
+                "link, so the appointment is created outside HighLevel. "
+                "Nothing in this account ever learns about it: no "
+                "appointment trigger fires, no confirmation goes out, the "
+                "reminder ladder never runs, no-show recovery never runs, "
+                "and the booking does not appear in any report the client "
+                "reads. The bookings still happen — they are just "
+                "invisible to every automation built to protect them.",
+                "Point the link at this location's calendar (the booking "
+                "widget link from Calendars, held in a custom value so it "
+                "is changed in one place), and keep the third-party "
+                "calendar only as a synced source of busy time.",
+                step=", ".join(named), reach=len(named),
+                cost="Every appointment booked through this link runs with "
+                     "no reminders and no follow-up, and never shows up in "
+                     "the numbers. The no-show rate on them is whatever it "
+                     "was before you had automation at all.")
 
     if not widget_hits:
         return
@@ -720,15 +904,19 @@ def booking_link_bypasses_the_calendar(acct: Account):
 # GHL068 — an appointment time with no zone attached
 # --------------------------------------------------------------------------
 
+# Only merge fields that render an HOUR. A date-only field ("{{
+# appointment.start_date }}") names a day, and a day needs no zone beside it —
+# flagging one puts a finding on a message that is already correct. Any
+# message that quotes the day also quotes the time, in a field this matches.
 _APPT_TIME_MERGE = re.compile(
     r"\{\{\s*(?:appointment|appt|event)[._-]?"
-    r"(?:start(?:_?(?:time|date|at))?|time|date|datetime|slot)\b", re.I)
+    r"(?:start(?:_?(?:time|at|date_?time))?|time|date_?time|slot)\b", re.I)
 
 _ZONE_TEXT = re.compile(r"time ?zone|\byour time\b|\blocal time\b", re.I)
 # Uppercase only, deliberately: lowercased, "ct" and "mt" appear inside
 # ordinary words and every reminder in the account would look compliant.
 _ZONE_ABBR = re.compile(
-    r"\b(?:E[SD]T|C[SD]T|M[SD]T|P[SD]T|AK[SD]T|HST|UTC|GMT|BST|"
+    r"\b(?:E[SD]T|C[SD]T|M[SD]T|P[SD]T|AK[SD]T|A[SD]T|HST|UTC|GMT|BST|"
     r"CES?T|AEST|IST|ET|CT|MT|PT)\b")
 # The zone written out in words — "2pm Eastern Time", "(Pacific)". Plenty of
 # well-built accounts spell it rather than abbreviate it, and reading those as
@@ -743,6 +931,14 @@ _ZONE_PARENTHETICAL = re.compile(
 _ZONE_IANA_IN_COPY = re.compile(
     r"\b(?:America|Europe|Asia|Africa|Australia|Pacific|Atlantic|Indian|US|"
     r"Etc)/[A-Za-z_]+")
+# The zone as a bare word, but only where it sits right after the time it
+# qualifies: "{{ appointment.start_time }} Eastern", "2:00 PM Central". Plenty
+# of accounts write it that way and mean it; "our central location" is the
+# reason the word alone is not enough.
+_ZONE_AFTER_TIME = re.compile(
+    r"(?:\}\}|\d(?::\d{2})?\s*(?:am|pm)?)[\s,(–—-]*"
+    r"\b(?:eastern|central|mountain|pacific|atlantic|alaska|hawaii|"
+    r"newfoundland)\b", re.I)
 
 _IANA_ZONE = re.compile(r"^[A-Za-z]+(?:_[A-Za-z]+)*/[A-Za-z0-9_+-]+$")
 _FIXED_OFFSET = re.compile(r"^(?:UTC|GMT)\s*[+-]\d{1,2}(?::\d{2})?$", re.I)
@@ -753,20 +949,28 @@ _CONTACT_ZONE = ("contact", "contacttimezone", "contactstimezone", "lead",
 def _names_a_zone(body: str) -> bool:
     return bool(_ZONE_TEXT.search(body) or _ZONE_ABBR.search(body)
                 or _ZONE_NAME.search(body) or _ZONE_PARENTHETICAL.search(body)
-                or _ZONE_IANA_IN_COPY.search(body))
+                or _ZONE_IANA_IN_COPY.search(body)
+                or _ZONE_AFTER_TIME.search(body))
 
 
 def _pinned_timezone(wf: Workflow) -> str:
-    """A literal zone nailed to the workflow, rather than the contact's own."""
+    """A literal zone nailed to the workflow, rather than the contact's own.
+
+    A workflow set to follow the contact frequently ALSO carries the account's
+    zone in the same settings block, as the fallback. Reading that as a pin
+    raises a medium finding to high on a workflow that is configured correctly,
+    so the source is settled first and the literal is only used if nothing said
+    "contact".
+    """
     settings = wf.settings if isinstance(wf.settings, dict) else {}
-    for key, value in settings.items():
-        if _nk(key) not in ("timezone", "timezonesource", "tz", "sendtimezone"):
-            continue
-        if not isinstance(value, str):
-            continue
+    relevant = [(key, value) for key, value in settings.items()
+                if _nk(key) in ("timezone", "timezonesource", "tz",
+                                "sendtimezone")
+                and isinstance(value, str)]
+    if any(_nk(value) in _CONTACT_ZONE for _, value in relevant):
+        return ""
+    for _, value in relevant:
         candidate = value.strip()
-        if _nk(candidate) in _CONTACT_ZONE:
-            return ""
         if _IANA_ZONE.match(candidate) or _FIXED_OFFSET.match(candidate):
             return candidate
     return ""
@@ -851,11 +1055,28 @@ def appointment_time_without_a_timezone(acct: Account):
 # GHL069 — apologising for a meeting that has not happened yet
 # --------------------------------------------------------------------------
 
-_NOSHOW_COPY = re.compile(
-    r"we missed you|sorry we missed|missed (?:you|your (?:call|appointment|"
-    r"session|slot))|you missed|\bno[- ]?show\b|did ?n'?t (?:make it|show|"
+# Copy that can only be about a missed MEETING. The noun is inside the phrase,
+# so no context is needed to read it.
+_NOSHOW_UNAMBIGUOUS = re.compile(
+    r"\bno[- ]?shows?\b|"
+    r"missed (?:your|the|our|today'?s) (?:appointment|appt|call|session|"
+    r"meeting|consult\w*|demo|slot|visit|booking)|"
+    r"did ?n'?t (?:make it to|show up for|attend) (?:your|the|our)", re.I)
+
+# The same apology with the noun left out. "We missed you!" is no-show copy in
+# a booking lane and the opening line of every win-back campaign ever built,
+# so it only counts where something else in the message is about a meeting.
+_NOSHOW_AMBIGUOUS = re.compile(
+    r"we missed you|sorry we missed|you missed|did ?n'?t (?:make it|show|"
     r"attend)|could ?n'?t make it|we did ?n'?t connect|"
     r"were ?n'?t able to (?:make|attend)", re.I)
+
+# What makes an apology about a meeting rather than about a lapsed customer:
+# the meeting itself, or the offer to move it.
+_MEETING_REFERENCE = re.compile(
+    r"\b(?:appointments?|appts?|calls?|sessions?|meetings?|consult\w*|demos?|"
+    r"slots?|visits?|bookings?)\b|re-?book|resched|another (?:time|slot|day)|"
+    r"new time|back on the (?:calendar|books)", re.I)
 
 # The same words, used as terms rather than as an apology. Every second
 # confirmation message in a service business carries a no-show fee line, and it
@@ -864,9 +1085,6 @@ _POLICY_CONTEXT = re.compile(
     r"\bfees?\b|charge[ds]?\b|\bcharging\b|polic(?:y|ies)|penalt|billed|"
     r"invoice|forfeit|deposit|\bcosts?\b|\brate\b", re.I)
 
-# Statuses that only exist once the appointment is behind the contact.
-_PAST_STATUS = re.compile(
-    r"no[- _]?show|showed|attended|complete|cancel", re.I)
 _PASSED_GATE = re.compile(
     r"no[- _]?show|showed|attend|appointment[_ ]?status|did[_ ]?they", re.I)
 # An unambiguous "this contact already missed one" marker, safe to read on ANY
@@ -882,15 +1100,74 @@ _MISS_MARKER = re.compile(
 # trigger is filtered correctly.
 _CALL_TRIGGER = re.compile(r"call|voicemail", re.I)
 
+# Evidence that the contact enters this lane when the booking is MADE: an
+# appointment trigger filtered to a live status, or a tag/trigger named for
+# the booking. Anything vaguer — an opaque tag, a stage id — cannot be read,
+# and a critical finding may not rest on a tag name nobody can decode.
+_BOOKING_ENTRY = re.compile(
+    r"book|schedul|confirm|appointment[- _]?set|new[- _]?appointment", re.I)
+
+
+# An apology for a missed PHONE attempt, which is not a no-show: "sorry we
+# missed you on the phone earlier — your call is still on for tomorrow" is a
+# correct message and names a meeting, so nothing else here separates it out.
+_PHONE_MISS = re.compile(
+    r"on the phone|tried (?:to call|calling|you)|could ?n'?t reach you|"
+    r"rang you|gave you a (?:call|ring)|left (?:you )?a (?:voicemail|message)|"
+    r"when we called", re.I)
+
 
 def _reads_as_a_missed_appointment(text: str) -> bool:
-    """Is this copy apologising for a miss, or quoting the no-show policy?"""
+    """Is this copy apologising for a missed meeting?
+
+    Four ways to be wrong here, and each of them puts a critical finding on a
+    correct message: the no-show FEE line every confirmation carries, the
+    win-back campaign that opens "we missed you", the cold-outreach nudge that
+    opens "sorry we didn't connect", and the apology for a phone call nobody
+    picked up. So those sentences are dropped first, and an apology with no
+    noun in it only counts when the message elsewhere is about a meeting.
+    """
+    meeting = bool(_MEETING_REFERENCE.search(text))
     for sentence in _sentences(text):
-        if not _NOSHOW_COPY.search(sentence):
+        if _POLICY_CONTEXT.search(sentence) or _PHONE_MISS.search(sentence):
             continue
-        if _POLICY_CONTEXT.search(sentence):
-            continue
-        return True
+        if _NOSHOW_UNAMBIGUOUS.search(sentence):
+            return True
+        if meeting and _NOSHOW_AMBIGUOUS.search(sentence):
+            return True
+    return False
+
+
+def _entered_before_the_appointment(wf: Workflow) -> bool:
+    """Does this workflow demonstrably start while the appointment is ahead?
+
+    That is the whole claim GHL069 makes, so it has to be provable rather than
+    inferred. An appointment trigger answers it outright — and answers it
+    alone, because a cancellation lane whose trigger someone named "Booking
+    cancelled" must not be read as a booking lane on the strength of the word.
+    Failing that, a trigger named for the booking counts. A lane entered on an
+    opaque tag proves nothing — the tag may well be the no-show marker another
+    workflow set — and guessing there would put "you were told you missed a
+    call you have not had yet" in a report about a correct recovery lane.
+    """
+    appts = _appointment_triggers(wf)
+    if appts:
+        if not any(t.filters() for t in appts):
+            return False  # unfiltered: GHL001's finding, not this one
+        return not _PAST_STATUS.search(_trigger_blob(appts))
+    return bool(_BOOKING_ENTRY.search(_trigger_evidence(wf)))
+
+
+def _sends_before_the_appointment(wf: Workflow, index: int) -> bool:
+    """Is this send held by a wait that targets a moment BEFORE the start?
+
+    The other way to prove the appointment has not happened: the builder said
+    so themselves, with a wait anchored to the slot and pointed backwards.
+    """
+    for step in wf.steps[:index]:
+        anchored, minutes = _appointment_offset(step)
+        if anchored and minutes is not None and minutes < 0:
+            return True
     return False
 
 
@@ -904,29 +1181,23 @@ def noshow_copy_with_no_proof_the_appointment_passed(acct: Account):
     appointment start. Built into the same lane as the confirmation and
     released by a plain duration wait, it goes to people whose appointment is
     still ahead of them — and it goes at the worst possible moment, to the
-    warmest lead in the account. Only booking lanes are read, and never a lane
-    the phone system starts — "sorry we missed your call" is the correct copy
-    there, and a text-back that also offers a booking link would otherwise look
-    like a booking lane. Workflows whose appointment trigger carries no filter
-    at all are left to GHL001, which owns that shape.
+    warmest lead in the account.
+
+    The bar for reading it is deliberately high, because every cheap version of
+    this check reports correct work. Only a workflow that provably starts
+    BEFORE the appointment is read; never a lane the phone system starts, where
+    "sorry we missed your call" is the correct copy; and never one whose
+    appointment trigger carries no filter at all, which is GHL001's finding.
     """
     for wf in acct.published():
-        if not _is_booking_lane(wf):
-            continue
         if any(_CALL_TRIGGER.search(t.type) for t in wf.triggers):
-            continue
-        appts = _appointment_triggers(wf)
-        # An unfiltered appointment trigger is GHL001's finding, and reporting
-        # the same workflow twice for one root cause dilutes both.
-        if appts and any(not t.filters() for t in appts):
-            continue
-        if _PAST_STATUS.search(_trigger_blob(appts)):
             continue
         # The two-workflow pattern: one lane tags the contact on the no-show
         # status, a second is triggered by that tag. The tag IS the proof, and
         # it never appears as a filter on an appointment trigger.
         if _MISS_MARKER.search(_trigger_evidence(wf)):
             continue
+        entered_early = _entered_before_the_appointment(wf)
         for i, step in enumerate(wf.steps):
             if not step.is_outbound:
                 continue
@@ -935,6 +1206,10 @@ def noshow_copy_with_no_proof_the_appointment_passed(acct: Account):
             except (TypeError, ValueError):
                 continue
             if not _reads_as_a_missed_appointment(body + "\n" + step.name):
+                continue
+            # A later send may still be held by a backwards-anchored wait even
+            # when this one is not, so keep reading rather than giving up.
+            if not (entered_early or _sends_before_the_appointment(wf, i)):
                 continue
             if _proves_the_appointment_passed(wf, i):
                 break
@@ -990,6 +1265,17 @@ _RESCHEDULE_WINDOW_MINUTES = 720
 _LAST_MINUTE_MINUTES = 120
 
 
+def _warns_in_good_time(wf: Workflow) -> bool:
+    """Does this workflow reach the contact while a reschedule is still easy?"""
+    for i, step in enumerate(wf.steps):
+        anchored, minutes = _appointment_offset(step)
+        if anchored and minutes is not None \
+                and -minutes >= _RESCHEDULE_WINDOW_MINUTES \
+                and wf.outbound_after(i):
+            return True
+    return False
+
+
 @rule("GHL070", "Reminder ladder gives no time to reschedule", "medium",
       "routing", "appointments", "timing")
 def reminders_leave_no_time_to_reschedule(acct: Account):
@@ -1002,9 +1288,14 @@ def reminders_leave_no_time_to_reschedule(acct: Account):
     after the decision, and its only real output is a record that the person
     was told. Advisory rather than alarming: a same-day booking flow can be
     built this way deliberately, and the day-before touch may be sitting in
-    another workflow or on the calendar's own notification settings, neither of
-    which a workflow export can see.
+    another workflow or on the calendar's own notification settings, the second
+    of which a workflow export cannot see. The first of them it CAN see, so it
+    reads the whole account before calling a lane the contact's only warning.
     """
+    # Day-of and day-before reminders are often split across two workflows, and
+    # the day-of one alone looks exactly like a ladder with no room to move.
+    # Read once, not once per finding.
+    in_good_time = [w for w in acct.published() if _warns_in_good_time(w)]
     for wf in acct.published():
         reminders = []
         for i, step in enumerate(wf.steps):
@@ -1026,6 +1317,32 @@ def reminders_leave_no_time_to_reschedule(acct: Account):
         # hour out has spoken to the contact twice, and calling that a single
         # last-minute reminder reads as a check that did not look.
         nothing_earlier = not any(s.is_outbound for s in wf.steps[:first_index])
+        # Splitting the day-before touch and the day-of touch across two
+        # workflows is a normal build, not a defect, so when the account has
+        # the earlier one this drops to the same advisory note GHL003 and
+        # GHL028 give a delegated responsibility: worth one line, not a rank.
+        elsewhere = next((w for w in in_good_time if w is not wf), None)
+        if elsewhere is not None:
+            yield _finding(
+                "GHL070", "low", wf,
+                f"Reminders here all land within {_human(earliest)} of the "
+                f"appointment — the earlier touch is in '{elsewhere.name}'",
+                "Nothing in this workflow reaches the contact until "
+                f"{_human(earliest)} before the appointment, which is after "
+                "the point where a reschedule is still easier than not "
+                f"turning up. '{elsewhere.name}' does send an earlier "
+                "reminder, so the contact is probably warned in time — but "
+                "only if both workflows cover the same calendars and the same "
+                "contacts. Where they do not, the bookings in this lane get a "
+                "last-minute warning and nothing else.",
+                f"Check that '{elsewhere.name}' enrolls the same bookings this "
+                "one does — same calendar, same trigger filters. If it does, "
+                "this is fine as the final nudge. If it does not, add a "
+                "24-hour touch here.",
+                step=names, reach=len(wf.outbound),
+                cost="Nothing, if the two workflows cover the same bookings. "
+                     "Every no-show in the gap between them, if they do not.")
+            continue
         if len(reminders) == 1 and -earliest <= _LAST_MINUTE_MINUTES \
                 and nothing_earlier:
             yield _finding(
@@ -1038,14 +1355,15 @@ def reminders_leave_no_time_to_reschedule(acct: Account):
                 "double-booked, or need a different time, there is nothing "
                 "they can do with the message except not turn up. A reminder "
                 "this late does not change attendance, it only records that "
-                "someone was told.",
+                "someone was told. No other workflow in this account sends an "
+                "earlier one either.",
                 "Add a touch the day before — 24 hours out is the one that "
                 "recovers bookings, because a reschedule is still easier than "
                 "a cancellation at that point — and keep this one as the "
                 "final nudge. Give both a reply path so a reschedule can "
                 "actually happen. If a day-before reminder already goes out "
-                "from another workflow or from the calendar's own "
-                "notification settings, note that and move on.",
+                "from the calendar's own notification settings, note that and "
+                "move on.",
                 step=names, reach=len(wf.outbound),
                 cost="This ladder does not reduce no-shows, it documents "
                      "them. Every slot lost here was recoverable a day "

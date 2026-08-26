@@ -15,6 +15,7 @@ copy.
 
 from __future__ import annotations
 
+import json
 import re
 
 from ..model import URL, Account, Step, Workflow
@@ -166,7 +167,44 @@ def marketing_email_without_postal_address(acct: Account):
     Fires only when the export actually carries the copy. An email that
     renders from a template this file does not contain has a footer nobody
     here can see, and calling that missing would be a guess.
+
+    And in GoHighLevel that is the NORMAL case, which is why this check skips
+    rather than fires when the account's email configuration was not supplied.
+    Builders put the postal address in the location-level footer or a shared
+    template once, not into the body of every workflow step — so a rule reading
+    only step bodies sees no address in an account that is perfectly compliant.
+    Measured against a real account on Aug-26 2026, this fired `high` on nine
+    of the eleven workflows that send any email: effectively all of them, which
+    is the definition of a check nobody reads twice.
+
+    The catalog's contract is that a check which cannot run yields a Skip,
+    never a finding. Asserting a federal violation from the absence of data the
+    export never carried is the worst possible way to break that contract.
     """
+    inv = acct.inventory
+    if not (inv.has("email_settings") or inv.has("templates")):
+        yield Skip(
+            rule="GHL059",
+            title="Marketing email with no postal address in the footer",
+            reason="The account's email settings and shared templates were not "
+                   "in this export, and that is where a GoHighLevel account "
+                   "normally carries its postal address. An address missing "
+                   "from a workflow's own step bodies is not evidence that it "
+                   "is missing from the email that actually goes out.",
+            needs="emailSettings / emailTemplates in the input bundle — or "
+                  "open Settings → Email Services and confirm the footer by eye",
+            category="compliance")
+        return
+
+    # The footer was supplied. If the address lives there — which is where it
+    # belongs, so that it stays right when the business moves — then every
+    # email in the account inherits it and no workflow is in breach.
+    account_footer = json.dumps(inv.email_settings, default=str) + " " + \
+        json.dumps(inv.templates, default=str)
+    if STREET.search(account_footer) or PO_BOX.search(account_footer) \
+            or ADDRESS_MERGE.search(account_footer):
+        return
+
     for wf in acct.published():
         emails = wf.email_steps
         if not emails or _transactional(acct, wf, emails):

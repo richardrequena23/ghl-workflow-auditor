@@ -5,11 +5,13 @@ one. The quiet half is the important half: an account's booking workflows are
 the ones the client looks at first, and a false positive in this section is the
 one that makes them stop reading.
 
-Roughly half the cases below are correct configurations that an earlier draft
-of this pack reported. Each of those is named for the shape it defends —
+Over half the cases below are correct configurations that an earlier draft of
+this pack reported. Each of those is named for the shape it defends —
 cancellation-policy copy, a branch read as a ladder rung, a no-show FEE line, a
-zone spelled out in words — because those are the sentences a real account is
-full of, and a regex written against the broken case matches all of them.
+zone spelled out in words, a win-back that opens "we missed you", a drip wait
+named after the appointment, a booking slug long enough to look like an id —
+because those are the sentences and settings a real account is full of, and a
+check written against the broken case matches all of them.
 """
 
 import json
@@ -200,6 +202,81 @@ class ReminderTimedOffTheBooking(unittest.TestCase):
                  sms("Reminder", "Your call is tomorrow.")]
         self.assertIn("GHL065", rules_hit([wf("Reminders", steps, [booked()])]))
 
+    def test_an_errand_that_names_the_session_is_not_a_reminder(self):
+        """The paperwork sentence, with the meeting noun inside it. Read as a
+        time claim it made a correct confirmation lane critical."""
+        steps = [sms("Confirmation", "You're booked."), wait(),
+                 sms("Intake", "Our team will email the forms for your "
+                               "session in a day or two.")]
+        self.assertNotIn("GHL065", rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_a_callback_promise_is_not_a_reminder(self):
+        """'call you back in 2 hours' carries the noun and the time and is
+        about the callback, not about the appointment."""
+        steps = [sms("Confirmation", "You're booked."), wait(),
+                 sms("Ops", "Need a different slot? Reply and we'll call you "
+                            "back in 2 hours.")]
+        self.assertNotIn("GHL065", rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_an_errand_sentence_still_yields_to_an_explicit_time_claim(self):
+        """The errand test must not swallow the real thing: 'your call is
+        tomorrow' says when the appointment is, whatever else the sentence
+        promises to send."""
+        steps = [wait(), sms("Reminder", "We'll send you a reminder - your "
+                                         "call is tomorrow at 2.")]
+        self.assertIn("GHL065", rules_hit([wf("Reminders", steps, [booked()])]))
+
+    def test_a_lane_entered_after_the_appointment_holds_no_reminders(self):
+        """A post-appointment check-in named '3 days out' is not a reminder
+        ladder — the label reads the same and the lane is the opposite one."""
+        steps = [wait("Wait 3 days", 3, "days"),
+                 sms("Check in 3 days out", "How are you getting on?")]
+        trigger = [{"type": "appointment_status", "name": "Showed",
+                    "filters": [{"field": "appointment_status",
+                                 "value": "showed"}]}]
+        self.assertNotIn("GHL065", rules_hit([wf("Aftercare", steps, trigger)]))
+
+    def test_a_wired_export_credits_only_the_waits_on_its_own_path(self):
+        """Branch children are flattened into the step list in save order, so
+        the wait 'above' a send in the file is regularly the one from the
+        branch beside it. Reading file order excused the broken branch here."""
+        steps = [
+            {"type": "if_else", "id": "b1", "name": "Booked for today?",
+             "meta": {"branches": [{"id": "b1-yes", "name": "yes"},
+                                   {"id": "b1-no", "name": "no"}]},
+             "next": ["b1-yes", "b1-no"]},
+            {"type": "event_start_wait", "id": "wyes", "parentKey": "b1-yes",
+             "name": "Until 1 hour before",
+             "meta": {"waitType": "appointment_time", "hoursBefore": 1}},
+            {"type": "sms", "id": "syes", "parentKey": "wyes", "name": "Soon",
+             "meta": {"body": "Your call starts in 1 hour."}},
+            {"type": "wait", "id": "wno", "parentKey": "b1-no",
+             "name": "Wait 1 day", "meta": {"delay": {"value": 1,
+                                                      "unit": "days"}}},
+            {"type": "sms", "id": "sno", "parentKey": "wno",
+             "name": "Day before", "meta": {"body": "Your call is tomorrow."}},
+        ]
+        found = findings_for("GHL065", [wf("Ladder", steps, [booked()])])
+        self.assertEqual([f.step for f in found], ["Day before"])
+
+    def test_a_wait_that_declares_the_appointment_keeps_its_anchor(self):
+        """A declared appointment wait carrying a plain `delay` is still an
+        appointment wait — only an UNdeclared one is read as a duration."""
+        declared = {"type": "wait", "name": "Wait for the call",
+                    "meta": {"waitType": "appointment_time",
+                             "delay": {"value": 24, "unit": "hours"}}}
+        steps = [declared, sms("Reminder", "Your call is tomorrow.")]
+        self.assertNotIn("GHL065", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_a_direction_key_alone_keeps_the_wait_anchored(self):
+        """The magnitude may be unreadable; a before/after key still means the
+        builder measured this against a fixed moment."""
+        directed = {"type": "wait", "name": "Wait on the appointment",
+                    "meta": {"delay": {"value": 2, "unit": "hours"},
+                             "direction": "after"}}
+        steps = [directed, sms("Recap", "Your call is tomorrow.")]
+        self.assertNotIn("GHL065", rules_hit([wf("Ladder", steps, [booked()])]))
+
 
 class ReminderOffsetsRunBackwards(unittest.TestCase):
     """GHL066 — a ladder that walks away from the appointment."""
@@ -214,9 +291,11 @@ class ReminderOffsetsRunBackwards(unittest.TestCase):
                  appt_wait("Until 1 hour before", 1, "hours"), sms("Second")]
         self.assertNotIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
 
-    def test_two_waits_targeting_the_same_moment_are_flagged(self):
-        steps = [appt_wait("Until 1 hour before", 1, "hours"), sms("First"),
-                 appt_wait("Also 1 hour before", 1, "hours"), sms("Second")]
+    def test_a_wait_targeting_an_earlier_moment_by_a_minute_is_flagged(self):
+        steps = [appt_wait("Until 60 minutes before", 60, "minutes"),
+                 sms("First"),
+                 appt_wait("Until 61 minutes before", 61, "minutes"),
+                 sms("Second")]
         self.assertIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
 
     def test_before_then_after_passes(self):
@@ -253,6 +332,16 @@ class ReminderOffsetsRunBackwards(unittest.TestCase):
                  sms("Second"), sms("Third")]
         found = findings_for("GHL066", [wf("Ladder", steps, [booked()])])
         self.assertEqual([f.reach for f in found], [2])
+
+    def test_the_lead_time_is_reported_in_the_builders_own_words(self):
+        """A ladder labelled in hours must be described in hours. '1 day
+        before' is a phrase no builder has written on a step, so a client
+        cannot match the finding to anything on their screen."""
+        steps = [appt_wait("Until 1 hour before", 1, "hours"), sms("A"),
+                 appt_wait("Until 24 hours before", 24, "hours"), sms("B")]
+        found = findings_for("GHL066", [wf("Ladder", steps, [booked()])])
+        self.assertIn("24 hours before", found[0].symptom)
+        self.assertNotIn("1 day", found[0].symptom)
 
     def test_minutes_and_days_are_compared_on_the_same_scale(self):
         """90 minutes is closer to the call than 2 days — and must read that way."""
@@ -325,6 +414,34 @@ class ReminderOffsetsRunBackwards(unittest.TestCase):
                  sms("First"),
                  appt_wait("Until 1 hour before", 1, "hours"), sms("Second")]
         self.assertNotIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_two_waits_on_the_same_moment_are_two_channels_not_a_reversal(self):
+        """A text and an email both timed 24 hours out release together, which
+        is what that builder wanted. There is no past moment to wait for, and
+        the finding would describe a sequence that does not exist."""
+        steps = [appt_wait("Until 24 hours before", 24, "hours"), sms("Text"),
+                 appt_wait("Until 24 hours before", 24, "hours"),
+                 email("Email", "Reminder about tomorrow.")]
+        self.assertNotIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_a_drip_wait_named_for_the_appointment_is_still_a_drip_wait(self):
+        """'Wait 1 day after the appointment is booked' is the same ordinary
+        pause as 'Wait 1 day after booking' — the word appointment in the label
+        read as +1 day from the SLOT made the correct rung below it look
+        reversed."""
+        steps = [wait("Wait 1 day after the appointment is booked", 1, "days"),
+                 email("Prep", "Here is what to bring."),
+                 appt_wait("Until 1 hour before", 1, "hours"), sms("Soon")]
+        self.assertNotIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_the_same_drip_wait_without_the_word_appointment_reads_the_same(self):
+        """The two labels must not produce two different audits."""
+        for label in ("Wait 1 day after booking",
+                      "Wait 1 day after the appointment is booked"):
+            steps = [wait(label, 1, "days"), email("Prep", "What to bring."),
+                     appt_wait("Until 1 hour before", 1, "hours"), sms("Soon")]
+            self.assertNotIn("GHL066",
+                             rules_hit([wf("Ladder", steps, [booked()])]), label)
 
 
 class BookingLinkBypassesTheCalendar(unittest.TestCase):
@@ -411,11 +528,44 @@ class BookingLinkBypassesTheCalendar(unittest.TestCase):
         self.assertNotIn("GHL067", skips_hit([wf("Booking", steps)],
                                              calendars=CALENDARS))
 
-    def test_a_token_matching_the_calendars_own_name_passes(self):
-        steps = [sms("Book",
-                     "https://link.msgsndr.com/widget/booking/strategycall")]
+    def test_a_long_lowercase_slug_is_not_an_id_either(self):
+        """'freeconsultationcall' is twenty characters, so length alone let it
+        through as an id and reported a live booking page as a dead calendar —
+        at critical. Case is what separates a slug from a real id."""
+        steps = [sms("Book", "https://link.msgsndr.com/widget/booking/"
+                             "freeconsultationcall")]
         self.assertNotIn("GHL067", rules_hit([wf("Booking", steps)],
                                              calendars=CALENDARS))
+        self.assertNotIn("GHL067", skips_hit([wf("Booking", steps)],
+                                             calendars=CALENDARS))
+
+    def test_a_hex_object_id_is_judged(self):
+        """The other shape HighLevel issues: 24 lowercase hex characters. No
+        human types that as a slug, so it is safe to check against the list."""
+        steps = [sms("Book", "https://link.msgsndr.com/widget/booking/"
+                             "5f8d0d55b54764421b7156c3")]
+        found = findings_for("GHL067", [wf("Booking", steps)],
+                             calendars=CALENDARS)
+        self.assertEqual([f.severity for f in found], ["critical"])
+
+    def test_a_help_centre_article_is_not_a_booking_link(self):
+        """The schedulers all run a help centre on the same domain. A link to
+        the reschedule instructions books nothing."""
+        steps = [email("Help", "How to move your slot: "
+                               "https://help.calendly.com/hc/en-us/articles/1")]
+        self.assertNotIn("GHL067", rules_hit([wf("Support", steps)],
+                                             calendars=CALENDARS))
+
+    def test_one_scheduler_in_two_messages_is_one_finding_naming_both(self):
+        """The text and the email are one defect — this lane books off-platform
+        — and the finding has to name both places it has to be fixed."""
+        steps = [sms("Text", "https://calendly.com/acme/intro"),
+                 email("Email", "Or here: https://calendly.com/acme/intro")]
+        found = findings_for("GHL067", [wf("Booking", steps)],
+                             calendars=CALENDARS)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].step, "Text, Email")
+        self.assertEqual(found[0].reach, 2)
 
     def test_the_same_dead_id_in_two_messages_is_one_finding(self):
         steps = [sms("Text", f"https://link.msgsndr.com/widget/booking/{DEAD_CAL}"),
@@ -423,6 +573,17 @@ class BookingLinkBypassesTheCalendar(unittest.TestCase):
         found = findings_for("GHL067", [wf("Booking", steps)],
                              calendars=CALENDARS)
         self.assertEqual(len(found), 1)
+
+    def test_the_finding_reads_correctly_for_a_single_message(self):
+        one = findings_for("GHL067", [wf("Booking", [
+            sms("Book", "https://calendly.com/acme/intro")])],
+            calendars=CALENDARS)
+        self.assertIn("This message hands", one[0].symptom)
+        two = findings_for("GHL067", [wf("Booking", [
+            sms("A", "https://calendly.com/acme/intro"),
+            email("B", "https://calendly.com/acme/intro")])],
+            calendars=CALENDARS)
+        self.assertIn("2 messages in this workflow hand", two[0].symptom)
 
     def test_two_workflows_carrying_the_dead_id_are_both_reported(self):
         body = f"https://link.msgsndr.com/widget/booking/{DEAD_CAL}"
@@ -549,6 +710,57 @@ class AppointmentTimeWithoutATimezone(unittest.TestCase):
         self.assertNotIn("GHL068",
                          rules_hit([wf("Confirm", steps, [booked()])]))
 
+    def test_a_bare_zone_word_straight_after_the_merge_field_passes(self):
+        """'{{ appointment.start_time }} Eastern' names the zone. Requiring the
+        word 'time' after it reported correct copy in half the accounts that
+        write it this way."""
+        steps = [sms("Confirm",
+                     "You're set for {{ appointment.start_time }} Eastern.")]
+        self.assertNotIn("GHL068",
+                         rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_a_bare_zone_word_after_a_written_out_hour_passes(self):
+        steps = [sms("Confirm", "Set for {{ appointment.start_time }} - "
+                                "2:00 PM Central.")]
+        self.assertNotIn("GHL068",
+                         rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_the_zone_word_on_its_own_elsewhere_is_not_a_zone(self):
+        """It only counts beside the time it qualifies — 'our central location'
+        is a sentence about parking."""
+        steps = [sms("Confirm", "You're set for {{ appointment.start_time }}. "
+                                "Our central location has parking out back.")]
+        self.assertIn("GHL068", rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_an_atlantic_abbreviation_passes(self):
+        steps = [sms("Confirm", "Set for {{ appointment.start_time }} AST.")]
+        self.assertNotIn("GHL068",
+                         rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_a_date_only_merge_field_needs_no_zone(self):
+        """A day is a day in every zone worth arguing about. Flagging the date
+        field put a finding on a message that was already right."""
+        steps = [sms("Confirm", "You're booked for "
+                                "{{ appointment.start_date }}.")]
+        self.assertNotIn("GHL068",
+                         rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_a_date_field_beside_a_time_field_still_fires(self):
+        steps = [sms("Confirm", "You're booked for {{ appointment.start_date }} "
+                                "at {{ appointment.start_time }}.")]
+        self.assertIn("GHL068", rules_hit([wf("Confirm", steps, [booked()])]))
+
+    def test_a_contact_timezone_source_beats_the_zone_beside_it(self):
+        """A workflow set to follow the contact still carries the account's own
+        zone in the same block, as the fallback. Reading that as a pin raised a
+        correctly configured workflow to high."""
+        steps = [sms("Confirm", "Set for {{ appointment.start_time }}.")]
+        found = findings_for("GHL068", [wf("Confirm", steps, [booked()],
+                                           settings={
+                                               "timezone": "America/New_York",
+                                               "timezoneSource": "contact"})])
+        self.assertEqual([f.severity for f in found], ["medium"])
+
 
 class NoShowCopyWithNoProof(unittest.TestCase):
     """GHL069 — apologising for a meeting that has not happened yet."""
@@ -601,14 +813,25 @@ class NoShowCopyWithNoProof(unittest.TestCase):
         steps = [wait(), sms("Nudge", "Looking forward to speaking.")]
         self.assertNotIn("GHL069", rules_hit([wf("Booked", steps, [booked()])]))
 
-    def test_a_calendar_reference_is_enough_to_establish_the_lane(self):
+    def test_a_tag_named_for_the_booking_is_read_as_the_booked_lane(self):
+        """No appointment trigger, but the tag says when the contact enters:
+        on the booking. Recovery copy behind a plain wait is the same defect."""
         steps = [{"type": "book_appointment", "name": "Book them",
                   "meta": {"calendarId": LIVE_CAL}},
                  wait(), sms("Recovery", "Sorry we missed you - rebook?")]
         trigger = [{"type": "contact_tag_added", "name": "Tagged",
-                    "filters": [{"tag": "booked"}]}]
+                    "filters": [{"tag": "appointment-booked"}]}]
         self.assertIn("GHL069", rules_hit([wf("Booked", steps, trigger)],
                                           calendars=CALENDARS))
+
+    def test_a_wait_pointed_before_the_appointment_is_proof_enough(self):
+        """The other way in: the builder anchored the wait to the slot and
+        pointed it backwards, so this send provably goes out beforehand."""
+        steps = [appt_wait("Until 1 hour before", 1, "hours"),
+                 sms("Recovery", "Sorry we missed you - want to rebook?")]
+        trigger = [{"type": "contact_tag_added", "name": "Tagged",
+                    "filters": [{"tag": "vip"}]}]
+        self.assertIn("GHL069", rules_hit([wf("Booked", steps, trigger)]))
 
     def test_drafts_are_not_audited(self):
         steps = [wait(), sms("Recovery", "Sorry we missed you - rebook?")]
@@ -661,6 +884,71 @@ class NoShowCopyWithNoProof(unittest.TestCase):
         trigger = [{"type": "contact_tag_added", "name": "Marked no-show",
                     "filters": [{"tag": "recovery"}]}]
         self.assertNotIn("GHL069", rules_hit([wf("Recovery", steps, trigger)]))
+
+    def test_an_opaque_tag_trigger_proves_nothing_and_stays_quiet(self):
+        """'ns-2024' is probably the no-show marker another workflow sets. A
+        critical finding may not rest on a tag name nobody can decode."""
+        steps = [{"type": "book_appointment", "name": "Rebook",
+                  "meta": {"calendarId": LIVE_CAL}},
+                 wait("Wait 1 hour", 1, "hours"),
+                 sms("Recovery", "Sorry we missed you - want another slot?")]
+        trigger = [{"type": "contact_tag_added", "name": "Tagged",
+                    "filters": [{"tag": "ns-2024"}]}]
+        self.assertNotIn("GHL069", rules_hit([wf("Recovery", steps, trigger)],
+                                             calendars=CALENDARS))
+
+    def test_a_win_back_campaign_is_not_a_no_show_lane(self):
+        """'We missed you!' opens every reactivation campaign ever built. With
+        a Book Appointment step in the lane it looked like recovery copy."""
+        steps = [sms("Winback", "We missed you! Here's 20% off your next "
+                                "order."),
+                 {"type": "book_appointment", "name": "Book",
+                  "meta": {"calendarId": LIVE_CAL}}]
+        trigger = [{"type": "contact_tag_added", "name": "Dormant",
+                    "filters": [{"tag": "dormant-90"}]}]
+        self.assertNotIn("GHL069", rules_hit([wf("Winback", steps, trigger)],
+                                             calendars=CALENDARS))
+
+    def test_a_win_back_on_the_booked_lane_still_needs_a_meeting_reference(self):
+        """Same copy, this time in a lane that provably starts at booking. It
+        is the words that are wrong for a no-show, not the lane."""
+        steps = [wait(), sms("Winback", "We missed you! Here's 20% off.")]
+        self.assertNotIn("GHL069", rules_hit([wf("Booked", steps, [booked()])]))
+
+    def test_cold_outreach_that_did_not_connect_is_not_a_no_show(self):
+        steps = [sms("Nudge", "Sorry we didn't connect - grab a time that "
+                              "suits you."),
+                 {"type": "book_appointment", "name": "Book",
+                  "meta": {"calendarId": LIVE_CAL}}]
+        trigger = [{"type": "contact_tag_added", "name": "Cold list",
+                    "filters": [{"tag": "outbound-list"}]}]
+        self.assertNotIn("GHL069", rules_hit([wf("Outbound", steps, trigger)],
+                                             calendars=CALENDARS))
+
+    def test_an_apology_for_a_phone_attempt_is_not_a_no_show(self):
+        """'Sorry we missed you on the phone' names a meeting in the next
+        breath and is still about a phone call nobody picked up."""
+        steps = [wait("Wait 1 hour", 1, "hours"),
+                 sms("Confirm call", "Sorry we missed you on the phone "
+                                     "earlier - we'll try again before your "
+                                     "appointment.")]
+        self.assertNotIn("GHL069", rules_hit([wf("Booked", steps, [booked()])]))
+
+    def test_a_cancellation_lane_named_for_the_booking_is_still_a_cancel_lane(self):
+        """The trigger's FILTER decides, not the word somebody typed in its
+        name — otherwise 'Booking cancelled' reads as a booked lane."""
+        steps = [wait(), sms("Rebook", "Sorry we missed you - another time?")]
+        trigger = [{"type": "appointment_status", "name": "Booking cancelled",
+                    "filters": [{"field": "appointment_status",
+                                 "value": "cancelled"}]}]
+        self.assertNotIn("GHL069", rules_hit([wf("Rebook", steps, trigger)]))
+
+    def test_a_lane_entered_on_the_showed_status_is_not_flagged(self):
+        steps = [wait(), sms("Recovery", "Sorry we missed you - rebook?")]
+        trigger = [{"type": "appointment_status", "name": "Showed",
+                    "filters": [{"field": "appointment_status",
+                                 "value": "showed"}]}]
+        self.assertNotIn("GHL069", rules_hit([wf("Aftercare", steps, trigger)]))
 
 
 class RemindersLeaveNoTimeToReschedule(unittest.TestCase):
@@ -738,6 +1026,61 @@ class RemindersLeaveNoTimeToReschedule(unittest.TestCase):
         found = findings_for("GHL070", [wf("Ladder", steps, [booked()])])
         self.assertIn("calendar", found[0].fix.lower())
 
+    def test_an_earlier_reminder_in_another_workflow_softens_the_finding(self):
+        """Day-of and day-before reminders are routinely split in two. Calling
+        the day-of one the contact's only warning, at high, without reading the
+        rest of the account is a finding the client can disprove in a click."""
+        day_before = wf("Day before",
+                        [appt_wait("Until 24 hours before", 24, "hours"),
+                         sms("Reminder", "See you tomorrow.")], [booked()])
+        day_of = wf("Day of", [appt_wait("Until 15 minutes before", 15,
+                                         "minutes"), sms("Now")], [booked()])
+        found = [f for f in findings_for("GHL070", [day_before, day_of])
+                 if f.workflow == "Day of"]
+        self.assertEqual([f.severity for f in found], ["low"])
+        self.assertIn("Day before", found[0].title)
+
+    def test_the_softening_applies_to_a_bunched_ladder_too(self):
+        """A day-of lane that also says good morning takes the other branch of
+        the rule, and the account still has the earlier touch either way."""
+        day_before = wf("Day before",
+                        [appt_wait("Until 24 hours before", 24, "hours"),
+                         sms("Reminder", "See you tomorrow.")], [booked()])
+        day_of = wf("Day of", [sms("Morning", "Looking forward to today."),
+                               appt_wait("Until 15 minutes before", 15,
+                                         "minutes"), sms("Now")], [booked()])
+        found = [f for f in findings_for("GHL070", [day_before, day_of])
+                 if f.workflow == "Day of"]
+        self.assertEqual([f.severity for f in found], ["low"])
+
+    def test_the_earlier_reminder_has_to_be_a_different_workflow(self):
+        """A workflow cannot be its own second opinion."""
+        steps = [appt_wait("Until 15 minutes before", 15, "minutes"), sms("Now")]
+        found = findings_for("GHL070", [wf("Ladder", steps, [booked()])])
+        self.assertEqual([f.severity for f in found], ["high"])
+
+    def test_an_earlier_wait_with_nothing_below_it_does_not_count(self):
+        """A 24-hour wait that reminds nobody is not the earlier touch."""
+        empty = wf("Day before", [sms("Confirmation", "You're booked."),
+                                  appt_wait("Until 24 hours before", 24,
+                                            "hours")], [booked()])
+        day_of = wf("Day of", [appt_wait("Until 15 minutes before", 15,
+                                         "minutes"), sms("Now")], [booked()])
+        found = [f for f in findings_for("GHL070", [empty, day_of])
+                 if f.workflow == "Day of"]
+        self.assertEqual([f.severity for f in found], ["high"])
+
+    def test_a_draft_workflow_is_not_the_earlier_touch(self):
+        """An unpublished day-before ladder sends nothing."""
+        draft = wf("Day before", [appt_wait("Until 24 hours before", 24,
+                                            "hours"), sms("Reminder")],
+                   [booked()], status="draft")
+        day_of = wf("Day of", [appt_wait("Until 15 minutes before", 15,
+                                         "minutes"), sms("Now")], [booked()])
+        found = [f for f in findings_for("GHL070", [draft, day_of])
+                 if f.workflow == "Day of"]
+        self.assertEqual([f.severity for f in found], ["high"])
+
 
 class OffsetShapes(unittest.TestCase):
     """The same wait, written the way seven different exports write it.
@@ -800,6 +1143,16 @@ class OffsetShapes(unittest.TestCase):
                            meta={"waitType": "appointment_time", "before": 24}),
                  sms("Reminder")]
         self.assertNotIn("GHL070", rules_hit([wf("Ladder", steps, [booked()])]))
+        self.assertNotIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_a_boolean_offset_is_not_one_hour(self):
+        """float(True) is 1.0, so a badly written flag reads as a lead time
+        nobody stated — and then the rung below it looks reversed."""
+        steps = [appt_wait("Reminder wait",
+                           meta={"waitType": "appointment_time",
+                                 "hoursBefore": True}),
+                 sms("A"),
+                 appt_wait("Until 24 hours before", 24, "hours"), sms("B")]
         self.assertNotIn("GHL066", rules_hit([wf("Ladder", steps, [booked()])]))
 
     def test_a_label_alone_reads_as_an_offset_when_nothing_else_does(self):
@@ -885,6 +1238,37 @@ class Robustness(unittest.TestCase):
             {"type": "sms", "meta": {"body": "https://link.msgsndr.com/"
                                              "widget/booking/AbCdEfGhIjKlMnOpQrSt"}}]}],
          "calendars": {"AbCdEfGhIjKlMnOpQrSt": None}},
+        # -- the shapes the hardening pass added ------------------------------
+        [{"name": "x", "status": "published", "settings": ["windowed"],
+          "steps": [{"type": "wait", "name": ["a", "b"],
+                     "meta": [{"delay": 1}]}]}],
+        [{"name": "x", "status": "published",
+          "steps": [{"type": "wait", "name": "Wait after the appointment",
+                     "meta": {"delay": True, "direction": None}},
+                    {"type": "sms", "meta": {"body": "Your call is tomorrow."}}],
+          "triggers": [{"type": "appointment_status",
+                        "filters": [{"value": "confirmed"}]}]}],
+        [{"name": "x", "status": "published",
+          "steps": [{"type": "event_start_wait", "id": None, "parentKey": 5,
+                     "next": {"a": "b"},
+                     "meta": {"waitType": "appointment_time",
+                              "hoursBefore": 1}},
+                    {"type": "sms", "id": ["s"], "parentKey": None,
+                     "meta": {"body": "Sorry we missed you - rebook?"}}],
+          "triggers": [{"type": "appointment_status",
+                        "filters": [{"value": "confirmed"}]}]}],
+        [{"name": "x", "status": "published",
+          "steps": [{"type": "sms", "meta": {"body": {"deep": {
+              "html": "https://calendly.com/a/b"}}}}]}],
+        [{"name": "x", "status": "published",
+          "steps": [{"type": "email",
+                     "meta": {"subject": ["{{ appointment.start_time }}"],
+                              "body": None}}],
+          "settings": {"timezone": {"name": "America/New_York"}}}],
+        {"workflows": [{"name": "x", "status": "published", "steps": [
+            {"type": "sms", "meta": {"body": "https://link.msgsndr.com/"
+                                             "widget/booking/AbCdEfGhIjKlMnOpQrSt"}}]}],
+         "calendars": [None, 7, {"id": None}, "AbCdEfGhIjKlMnOpQrSt"]},
     ]
 
     def test_no_input_shape_raises(self):
@@ -947,6 +1331,38 @@ class Robustness(unittest.TestCase):
         steps = [sms("Book", "https://local.com/cal and https://mycal.com/x")]
         self.assertNotIn("GHL067", rules_hit([wf("Booking", steps)],
                                              calendars=CALENDARS))
+
+    def test_wiring_with_ids_that_are_not_strings_still_walks(self):
+        """A generated export writes numeric node ids. The ancestor walk has to
+        survive them rather than take the whole audit down with it."""
+        steps = [{"type": "wait", "id": 1, "meta": {"delay": {"value": 2,
+                                                              "unit": "days"}}},
+                 {"type": "sms", "id": 2, "parentKey": 1, "name": "Reminder",
+                  "meta": {"body": "Your call is tomorrow."}}]
+        self.assertIn("GHL065", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_a_direction_buried_deep_in_the_settings_is_still_found(self):
+        deep = {"type": "wait", "name": "Wait on the appointment",
+                "meta": {"delay": {"value": 2, "unit": "hours"},
+                         "advanced": {"schedule": [{"offsetDirection":
+                                                    "before"}]}}}
+        steps = [deep, sms("Reminder", "Your call is tomorrow.")]
+        self.assertNotIn("GHL065", rules_hit([wf("Ladder", steps, [booked()])]))
+
+    def test_a_message_body_that_is_not_a_string_is_ignored(self):
+        steps = [{"type": "sms", "name": "Book", "meta": {"body": 12345}}]
+        self.assertNotIn("GHL067", rules_hit([wf("Booking", steps)],
+                                             calendars=CALENDARS))
+
+    def test_a_calendar_list_of_junk_still_judges_the_link(self):
+        """`calendars` was supplied, so the check runs rather than skipping —
+        and an id that matches none of the junk is still not in the account."""
+        steps = [sms("Book", f"https://link.msgsndr.com/widget/booking/{DEAD_CAL}")]
+        junk = [None, 7, {"id": None}, "somethingelse"]
+        self.assertIn("GHL067", rules_hit([wf("Booking", steps)],
+                                          calendars=junk))
+        self.assertNotIn("GHL067", skips_hit([wf("Booking", steps)],
+                                             calendars=junk))
 
 
 class NoFalsePositivesOnTheCleanAccount(unittest.TestCase):

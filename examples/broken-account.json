@@ -2928,7 +2928,10 @@
     }
   ],
   "emailSettings": {
-    "default_unsubscribe": false
+    "default_unsubscribe": false,
+    "fromName": "Deliverability Demo",
+    "fromEmail": "hello@deliverability-demo.example",
+    "_note": "No postal address here on purpose \u2014 GHL059's fixture needs the account config present so the check runs, and the address genuinely absent so it fires."
   },
   "phoneNumbers": [
     {

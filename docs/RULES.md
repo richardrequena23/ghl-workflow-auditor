@@ -572,7 +572,7 @@ Whether the right person gets the right message at the right time. The largest c
 
 **Reminder ladder's appointment offsets run backwards** — `high` · tags: `appointments`, `timing`
 
-*What it looks like:* This wait targets 1 day before the appointment, and the wait above it already held the contact to 1 hour before it. The second target is in the past by the time anyone reaches it, so the step either releases at once — two reminders in the same minute, the later one quoting the wrong lead time — or holds the contact for an appointment moment that will never come round again. Both are wrong, and the ladder still reads correctly in the builder.
+*What it looks like:* This wait targets 24 hours before the appointment, and the wait above it already held the contact to 1 hour before it. The second target is in the past by the time anyone reaches it, so the step either releases at once — two reminders in the same minute, the later one quoting the wrong lead time — or holds the contact for an appointment moment that will never come round again. Both are wrong, and the ladder still reads correctly in the builder.
 
 *The fix:* Put the waits back in order, furthest from the appointment first: 24 hours before, then 1 hour before, then anything after. Then run one real booking through and check the timestamps on the two messages.
 
@@ -832,11 +832,11 @@ Whether the right person gets the right message at the right time. The largest c
 
 **Reminder ladder gives no time to reschedule** — `medium` · tags: `appointments`, `timing`
 
-*What it looks like:* Nothing in this booking workflow reaches the contact until 15 minutes before the appointment. By then the contact's day is already decided: if they have forgotten, double-booked, or need a different time, there is nothing they can do with the message except not turn up. A reminder this late does not change attendance, it only records that someone was told.
+*What it looks like:* Nothing in this workflow reaches the contact until 15 minutes before the appointment, which is after the point where a reschedule is still easier than not turning up. 'Strategy Call - Booking & Reminders' does send an earlier reminder, so the contact is probably warned in time — but only if both workflows cover the same calendars and the same contacts. Where they do not, the bookings in this lane get a last-minute warning and nothing else.
 
-*The fix:* Add a touch the day before — 24 hours out is the one that recovers bookings, because a reschedule is still easier than a cancellation at that point — and keep this one as the final nudge. Give both a reply path so a reschedule can actually happen. If a day-before reminder already goes out from another workflow or from the calendar's own notification settings, note that and move on.
+*The fix:* Check that 'Strategy Call - Booking & Reminders' enrolls the same bookings this one does — same calendar, same trigger filters. If it does, this is fine as the final nudge. If it does not, add a 24-hour touch here.
 
-*What it costs:* This ladder does not reduce no-shows, it documents them. Every slot lost here was recoverable a day earlier for the price of one text.
+*What it costs:* Nothing, if the two workflows cover the same bookings. Every no-show in the gap between them, if they do not.
 
 ### GHL084
 
