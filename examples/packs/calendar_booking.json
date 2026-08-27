@@ -1,0 +1,181 @@
+{
+  "calendars": [
+    {"id": "CVokAlI8fgw4WYWoCtQz", "name": "Calendar Booking Demo - Strategy Call"}
+  ],
+  "workflows": [
+    {
+      "_id": "wf_cb_fixed_wait",
+      "name": "Calendar Booking Demo - Reminders On A Fixed Wait",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Confirmation",
+          "meta": {"body": "You're booked in. Reply STOP to opt out."}
+        },
+        {
+          "type": "wait",
+          "name": "Wait 1 day",
+          "meta": {"delay": {"value": 1, "unit": "days"}}
+        },
+        {
+          "type": "sms",
+          "name": "24 hour reminder",
+          "meta": {"body": "Quick reminder - your call is tomorrow."}
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_backwards",
+      "name": "Calendar Booking Demo - Ladder Out Of Order",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "event_start_wait",
+          "name": "Until 1 hour before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {"value": 1, "unit": "hours", "direction": "before"}
+          }
+        },
+        {
+          "type": "sms",
+          "name": "1 hour reminder",
+          "meta": {"body": "See you shortly. Reply STOP to opt out."}
+        },
+        {
+          "type": "event_start_wait",
+          "name": "Until 24 hours before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {"value": 24, "unit": "hours", "direction": "before"}
+          }
+        },
+        {
+          "type": "sms",
+          "name": "24 hour reminder",
+          "meta": {"body": "Reminder about your call. Reply STOP to opt out."}
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_booking_links",
+      "name": "Calendar Booking Demo - Booking Links Out Of Account",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_created", "name": "New contact", "filters": []}
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Send the booking link",
+          "meta": {
+            "body": "Grab a time that suits you: https://calendly.com/acme-sales/intro-call - reply STOP to opt out."
+          }
+        },
+        {
+          "type": "email",
+          "name": "Booking link email",
+          "meta": {
+            "subject": "Pick your time",
+            "body": "Here is the link: https://api.leadconnectorhq.com/widget/booking/7dQ2mKpX1nRvYtLzBa04"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_no_zone",
+      "name": "Calendar Booking Demo - Time With No Zone",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Confirmation",
+          "meta": {
+            "body": "You're all set for {{ appointment.start_time }}. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {"timezone": "America/New_York"}
+    },
+    {
+      "_id": "wf_cb_noshow_copy",
+      "name": "Calendar Booking Demo - No Show Copy On The Booked Lane",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {"delay": {"value": 2, "unit": "days"}}
+        },
+        {
+          "type": "sms",
+          "name": "Recovery text",
+          "meta": {
+            "body": "Sorry we missed you - want to pick another slot? Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_last_minute",
+      "name": "Calendar Booking Demo - Last Minute Reminder Only",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "event_start_wait",
+          "name": "Until 15 minutes before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {"value": 15, "unit": "minutes", "direction": "before"}
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Starting soon",
+          "meta": {"body": "We're starting shortly. Reply STOP to opt out."}
+        }
+      ],
+      "settings": {}
+    }
+  ]
+}

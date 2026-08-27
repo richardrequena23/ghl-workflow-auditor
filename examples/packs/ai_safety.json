@@ -1,0 +1,114 @@
+{
+  "workflows": [
+    {
+      "_id": "wf_aisafety_reply_bot",
+      "name": "AI Safety Demo - Inbound Reply Bot",
+      "status": "published",
+      "triggers": [
+        {"type": "inbound_message", "name": "Customer texted us"}
+      ],
+      "steps": [
+        {
+          "type": "conversation_ai",
+          "name": "Answer the question",
+          "meta": {
+            "prompt": "You are the front desk for the clinic. Answer the customer's question using the notes below, and book them in if they ask.\n\nCustomer message: {{message.body}}\nWhat they told us before: {{contact.notes}}"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Send the AI answer",
+          "meta": {"body": "{{ai.reply}}"}
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_qualifier",
+      "name": "AI Safety Demo - Qualifier Field Sync",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Intake form",
+          "filters": [{"field": "form", "value": "Intake"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "ai_extract",
+          "name": "Pull budget and timeline out of the answer",
+          "meta": {
+            "prompt": "Read the answer below and return the budget and the timeline.\n\nAnswer: {{contact.custom_field.biggest_challenge}}"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Write budget and timeline to the record",
+          "meta": {
+            "fields": {
+              "budget": "{{ai.budget}}",
+              "timeline": "{{ai.timeline}}"
+            }
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_enrichment",
+      "name": "AI Safety Demo - Prompt Enrichment Webhook",
+      "status": "published",
+      "triggers": [
+        {"type": "contact_created", "name": "New contact"}
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Score the lead with the model",
+          "meta": {
+            "method": "POST",
+            "url": "https://api.openai.com/v1/chat/completions",
+            "body": {
+              "model": "gpt-4o-mini",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Score this lead out of ten and say why. Name: {{contact.first_name}} {{contact.last_name}}. Phone: {{contact.phone}}. Email: {{contact.email}}. Address: {{contact.address1}}. Last payment on file: {{contact.custom_field.last_payment_reference}}."
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_summariser",
+      "name": "AI Safety Demo - Review Summariser",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "survey_submitted",
+          "name": "Post-visit survey",
+          "filters": [{"field": "survey", "value": "Post-visit"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "ai_summarize",
+          "name": "Summarise the feedback",
+          "meta": {
+            "prompt": "Summarise the feedback for the owner in one line.\n\n<feedback>\n{{survey.answer_1}}\n</feedback>"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Send the summary to the owner",
+          "meta": {"body": "New feedback: {{ai.summary}}"}
+        }
+      ],
+      "settings": {}
+    }
+  ]
+}

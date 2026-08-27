@@ -3215,3 +3215,9 @@ def run_all(acct: Account, min_severity: str = "low",
     findings.sort(key=Finding.sort_key)
     skips.sort(key=lambda s: s.rule)
     return findings, skips
+
+
+# The catalog past GHL052 lives in packs/, one module per failure family. The
+# import is last so that `rule`, `_finding` and every helper above are already
+# defined when a pack registers against them.
+from . import packs  # noqa: E402,F401  (imported for its registration side effect)

@@ -1,0 +1,194 @@
+{
+  "workflows": [
+    {
+      "_id": "wf_cs_listblast",
+      "name": "Compliance SMS - Purchased List Blast",
+      "status": "published",
+      "triggers": [],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Opening text",
+          "meta": {
+            "body": "Hey {{ contact.first_name }}, quick question - are you still looking to get the roof sorted this year?"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_overnight",
+      "name": "Compliance SMS - Overnight Follow Up",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Quote request",
+          "filters": [{"field": "form", "value": "Quote request"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Thanks for the request",
+          "meta": {
+            "body": "Thanks for the quote request - this is Dana at Northgate Roofing. When's a good time to talk it through?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {"delay": "2 days"}
+        },
+        {
+          "type": "sms",
+          "name": "Second touch",
+          "meta": {
+            "body": "Still happy to put that quote together whenever you're ready. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "sendingWindow": {"start": "07:00", "end": "22:00"},
+        "timezone": "contact"
+      }
+    },
+    {
+      "_id": "wf_cs_renewal",
+      "name": "Compliance SMS - Renewal Nudge",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Renewal form",
+          "filters": [{"field": "form", "value": "Renewal"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Renewal notice",
+          "meta": {
+            "body": "Your cover renews Friday - this is Dana at Northgate Roofing if anything needs changing before then. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "sendingWindow": {"start": "08:00", "end": "20:30"},
+        "timezone": "contact"
+      }
+    },
+    {
+      "_id": "wf_cs_standby",
+      "name": "Compliance SMS - Standby Keyword Reply",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Standby signup",
+          "filters": [{"field": "form", "value": "Standby signup"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Standby confirmation",
+          "meta": {
+            "body": "You're on standby with Northgate Roofing - we'll text the moment a slot opens up. Reply REMOVE to be taken off."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_apptkeyword",
+      "name": "Compliance SMS - Appointment Change Keyword",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Appointment confirmed",
+          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Booking confirmed",
+          "meta": {
+            "body": "You're all set for Tuesday at 10am with Northgate Roofing. Reply CANCEL to cancel your appointment."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_taphouse",
+      "name": "Compliance SMS - Tap House Friday Promo",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [{"field": "tag", "value": "sms-opt-in"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Friday promo",
+          "meta": {
+            "body": "Friday at the Northgate Tap House: two-for-one wine and tequila flights from 6pm. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_sameday",
+      "name": "Compliance SMS - Same Day Push",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Pricing page form",
+          "filters": [{"field": "form", "value": "Pricing"}]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Instant reply",
+          "meta": {
+            "body": "Thanks for checking the pricing page - this is Dana at Northgate Roofing, want me to send the full breakdown?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 hours",
+          "meta": {"delay": "2 hours"}
+        },
+        {
+          "type": "sms",
+          "name": "Second push",
+          "meta": {
+            "body": "Sending the breakdown over now - anything specific you want priced up?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 3 hours",
+          "meta": {"value": 3, "unit": "hours"}
+        },
+        {
+          "type": "sms",
+          "name": "Third push",
+          "meta": {
+            "body": "Last one from me today - happy to hold a slot this week if you want it. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    }
+  ]
+}

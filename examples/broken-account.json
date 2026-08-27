@@ -1,1143 +1,3029 @@
 {
- "customValues": {
-  "review_link": "REPLACE-WITH-CLIENT-GOOGLE-ID",
-  "office_phone": "(555) 010-9900",
-  "booking_link": ""
- },
- "workflows": [
-  {
-   "_id": "wf_noshow",
-   "name": "No Show Recovery",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "appointment",
-     "name": "Appointment Status",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Sorry we missed you",
-     "meta": {
-      "body": "Sorry we missed you today \u2014 want to grab another time?"
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 2 days",
-     "meta": {
-      "delay": "2 days"
-     }
-    },
-    {
-     "type": "email",
-     "name": "Second attempt",
-     "meta": {
-      "body": "Still happy to find you a slot."
-     }
-    },
-    {
-     "type": "create_opportunity",
-     "name": "Create opportunity",
-     "meta": {
-      "pipelineId": "pipe_sales"
-     }
-    }
-   ],
-   "settings": {
-    "allowReentry": true
-   }
+  "customValues": {
+    "review_link": "REPLACE-WITH-CLIENT-GOOGLE-ID",
+    "office_phone": "(555) 010-9900",
+    "booking_link": "",
+    "RL Booking Link": "https://calendar.example-client.com/rl-consult"
   },
-  {
-   "_id": "wf_missedcall",
-   "name": "Missed Call Text Back",
-   "status": "published",
-   "triggers": [
+  "workflows": [
     {
-     "type": "call_status",
-     "name": "Call Status",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Text back immediately",
-     "meta": {
-      "body": "Sorry we missed your call! How can we help?"
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 4 hours"
-    },
-    {
-     "type": "email",
-     "name": "Follow up by email",
-     "meta": {
-      "body": "Following up on your call."
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_reminders",
-   "name": "Strategy Call - Booking & Reminders",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "customer_booked_appointment",
-     "name": "Booked",
-     "filters": [
-      {
-       "field": "appointment_status",
-       "value": "confirmed"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Confirmation",
-     "meta": {
-      "body": "You're booked."
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Until 24 hours before"
-    },
-    {
-     "type": "sms",
-     "name": "24 hour reminder",
-     "meta": {
-      "body": "Reminder \u2014 your call is tomorrow."
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Until 1 hour before"
-    },
-    {
-     "type": "sms",
-     "name": "1 hour reminder",
-     "meta": {
-      "body": "Your call starts in 1 hour."
-     }
-    }
-   ],
-   "settings": {
-    "sendingWindow": {
-     "start": "09:00",
-     "end": "20:00"
-    }
-   }
-  },
-  {
-   "_id": "wf_reactivation",
-   "name": "Database Reactivation - Cold List",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_tag_added",
-     "name": "Tag: reactivate",
-     "filters": [
-      {
-       "tag": "reactivate"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "email",
-     "name": "Is this still live?",
-     "meta": {
-      "body": "Quick one \u2014 is this still something you're working on?"
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 3 days"
-    },
-    {
-     "type": "sms",
-     "name": "Nudge",
-     "meta": {
-      "body": "Just checking back - grab a time here: https://bit.ly/3xR2mQ"
-     }
-    },
-    {
-     "type": "webhook",
-     "name": "Push to reporting",
-     "meta": {
-      "url": "https://hooks.example.com/inbound/reporting"
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_review",
-   "name": "Review Request After Close",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_tag_added",
-     "name": "Tag: job-complete",
-     "filters": [
-      {
-       "tag": "job-complete"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "if_else",
-     "name": "Had a complaint or refund - skip",
-     "meta": {
-      "conditions": [
-       {
-        "tag": "complaint"
-       },
-       {
-        "tag": "refund"
-       }
-      ]
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 7 days"
-    },
-    {
-     "type": "email",
-     "name": "Ask for the review",
-     "meta": {
-      "body": "How did we do? {{ custom_values.review_link }}"
-     }
-    },
-    {
-     "type": "internal_notification",
-     "name": "Alert the team"
-    },
-    {
-     "type": "wait",
-     "name": "Wait 3 days"
-    },
-    {
-     "type": "sms",
-     "name": "Nudge with the link",
-     "meta": {
-      "body": "Here's the link: {{ custom_values.review_link }}"
-     }
-    },
-    {
-     "type": "internal_notification",
-     "name": "Alert the team"
-    }
-   ]
-  },
-  {
-   "_id": "wf_sandbox",
-   "name": "ZZ SANDBOX - branch probe (do not use)",
-   "status": "published",
-   "triggers": [],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "test",
-     "meta": {
-      "body": "TODO write the real copy"
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_hot_alert",
-   "name": "Hot Lead Alert",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_tag_added",
-     "name": "Tagged hot-lead",
-     "filters": [
-      {
-       "tag": "hot-lead"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "internal_notification",
-     "name": "Ping the closer",
-     "meta": {
-      "body": "Hot lead: {{ contact.name }}"
-     }
-    },
-    {
-     "type": "add_contact_tag",
-     "name": "Queue long-term nurture",
-     "meta": {
-      "tags": [
-       "nurture-me"
-      ]
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_nurture",
-   "name": "Long Term Nurture",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_tag_added",
-     "name": "Tagged nurture-me",
-     "filters": [
-      {
-       "tag": "nurture-me"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Check-in 1",
-     "meta": {
-      "body": "Been a while - still thinking about it?"
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 30 days",
-     "meta": {
-      "delay": "30 days"
-     }
-    },
-    {
-     "type": "sms",
-     "name": "Check-in 2",
-     "meta": {
-      "body": "Doors close Friday {{ contact.first_name | default: 'there' }}, want back in?"
-     }
-    },
-    {
-     "type": "add_contact_tag",
-     "name": "Re-flag as hot",
-     "meta": {
-      "tags": [
-       "hot-lead"
-      ]
-     }
-    }
-   ],
-   "settings": {
-    "allowReentry": true
-   }
-  },
-  {
-   "_id": "wf_welcome_sms",
-   "name": "Welcome Text - New Lead",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_created",
-     "name": "New contact",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Welcome text",
-     "meta": {
-      "fromNumber": "+1 (555) 010-8845",
-      "body": "Hi {{ contact.first_name }}, thanks for reaching out about {{ contact.servcie_interest }} - grab a time here: {{ custom_values.booking_link }}"
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_welcome_email",
-   "name": "Welcome Email - New Lead",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_created",
-     "name": "New contact",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "email",
-     "name": "Welcome email",
-     "meta": {
-      "subject": "Welcome!",
-      "body": "Great to have you - here is what happens next."
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_speed",
-   "name": "Speed to Lead - 5 Minute Response",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "form_submitted",
-     "name": "Intake form",
-     "filters": [
-      {
-       "field": "formId",
-       "value": "form_intake"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Instant reply",
-     "id": "s1",
-     "next": "s2",
-     "meta": {
-      "body": "Thanks for reaching out! When's a good time to talk? Reply STOP to opt out."
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait for their reply",
-     "id": "s2",
-     "next": "s3",
-     "meta": {
-      "waitType": "contact_reply",
-      "delay": "unlimited"
-     }
-    },
-    {
-     "type": "sms",
-     "name": "Second touch",
-     "id": "s3",
-     "next": "s4",
-     "meta": {
-      "body": "Still keen? Happy to find a slot."
-     }
-    },
-    {
-     "type": "email",
-     "name": "Last touch",
-     "id": "s4",
-     "next": "s9missing",
-     "meta": {
-      "subject": "One more try",
-      "body": "Closing your file unless I hear back."
-     }
-    },
-    {
-     "type": "sms",
-     "name": "Detached follow-up",
-     "id": "s7",
-     "parentKey": "s6-deleted",
-     "meta": {
-      "body": "Orphaned when the branch above was removed."
-     }
-    }
-   ],
-   "settings": {
-    "allowReentry": true
-   }
-  },
-  {
-   "_id": "wf_intake",
-   "name": "Lead Intake - Qualify & Route",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "contact_tag_added",
-     "name": "Tagged intake",
-     "filters": [
-      {
-       "tag": "intake"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "if_else",
-     "name": "Qualified?",
-     "meta": {
-      "conditions": [
-       {
-        "field": "contact.service_interest",
-        "operator": "exists"
-       }
+      "_id": "wf_noshow",
+      "name": "No Show Recovery",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment",
+          "name": "Appointment Status",
+          "filters": []
+        }
       ],
-      "branches": [
-       {
-        "name": "Qualified",
-        "actions": [
-         {
-          "type": "add_contact_tag",
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Sorry we missed you",
           "meta": {
-           "tags": [
-            "qualified"
-           ]
+            "body": "Sorry we missed you today \u2014 want to grab another time?"
           }
-         }
-        ]
-       },
-       {
-        "name": "None",
-        "actions": []
-       }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "email",
+          "name": "Second attempt",
+          "meta": {
+            "body": "Still happy to find you a slot."
+          }
+        },
+        {
+          "type": "create_opportunity",
+          "name": "Create opportunity",
+          "meta": {
+            "pipelineId": "pipe_sales"
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
+      }
+    },
+    {
+      "_id": "wf_missedcall",
+      "name": "Missed Call Text Back",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "call_status",
+          "name": "Call Status",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Text back immediately",
+          "meta": {
+            "body": "Sorry we missed your call! How can we help?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 4 hours"
+        },
+        {
+          "type": "email",
+          "name": "Follow up by email",
+          "meta": {
+            "body": "Following up on your call."
+          }
+        }
       ]
-     }
     },
     {
-     "type": "assign_round_robin",
-     "name": "Route to a rep",
-     "meta": {
-      "users": []
-     }
-    },
-    {
-     "type": "book_appointment",
-     "name": "Offer the strategy call",
-     "meta": {
-      "calendarId": "cal_deleted_2024"
-     }
-    },
-    {
-     "type": "internal_notification",
-     "name": "Tell the owner",
-     "meta": {
-      "userId": "usr_left",
-      "body": "New qualified lead."
-     }
-    },
-    {
-     "type": "webhook",
-     "name": "Sync to the reporting sheet",
-     "meta": {
-      "url": "https://webhook.site/9d41c2aa-probe"
-     }
-    },
-    {
-     "type": "email",
-     "name": "What happens next",
-     "meta": {
-      "subject": "Next steps",
-      "body": "Here is what happens next. Book: {{ custom_values.booking_link }}"
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_rebook",
-   "name": "Cancelled - One Rebook Ask",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "appointment_status",
-     "name": "Cancelled",
-     "filters": [
-      {
-       "field": "appointment_status",
-       "value": "cancelled"
+      "_id": "wf_reminders",
+      "name": "Strategy Call - Booking & Reminders",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "customer_booked_appointment",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Confirmation",
+          "meta": {
+            "body": "You're booked."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Until 24 hours before"
+        },
+        {
+          "type": "sms",
+          "name": "24 hour reminder",
+          "meta": {
+            "body": "Reminder \u2014 your call is tomorrow."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Until 1 hour before"
+        },
+        {
+          "type": "sms",
+          "name": "1 hour reminder",
+          "meta": {
+            "body": "Your call starts in 1 hour."
+          }
+        }
+      ],
+      "settings": {
+        "sendingWindow": {
+          "start": "09:00",
+          "end": "20:00"
+        }
       }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Sorry to miss you",
-     "meta": {
-      "body": "No problem - want to grab another time? Reply STOP to opt out."
-     }
     },
     {
-     "type": "wait",
-     "name": "Wait 2 days",
-     "meta": {
-      "delay": "2 days"
-     }
-    },
-    {
-     "type": "email",
-     "name": "One more option",
-     "meta": {
-      "subject": "Another time?",
-      "body": "Here are a few more slots this week."
-     }
-    }
-   ],
-   "settings": {
-    "allowReentry": false
-   }
-  },
-  {
-   "_id": "wf_order",
-   "name": "Course Purchase - Thank You",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "order_form_submitted",
-     "name": "Order form",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "email",
-     "name": "Purchase confirmation",
-     "meta": {
-      "subject": "You're in!",
-      "body": "Thanks for your purchase - your order is confirmed. Receipt to follow."
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_referral",
-   "name": "Referral Ask - Warm Clients",
-   "status": "draft",
-   "triggers": [
-    {
-     "type": "contact_tag_added",
-     "name": "Tagged referral-ready",
-     "filters": [
-      {
-       "tag": "referral-ready"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "The ask",
-     "meta": {
-      "body": "Loved working with you - know anyone else who could use us? Reply STOP to opt out."
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 5 days",
-     "meta": {
-      "delay": "5 days"
-     }
-    },
-    {
-     "type": "sms",
-     "name": "One nudge",
-     "meta": {
-      "body": "No pressure - the intro means a lot if someone comes to mind."
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_onboarding",
-   "name": "Onboarding Drip - Paid Course",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "order_submitted",
-     "name": "Order Submitted",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "sms",
-     "name": "Welcome text",
-     "meta": {
-      "body": "Welcome aboard - your login details are in your inbox. Reply STOP to opt out."
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 1 day",
-     "meta": {
-      "delay": "1 day",
-      "window": {
-       "start": "09:00",
-       "end": "17:00"
-      }
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 2 days",
-     "meta": {
-      "delay": "2 days",
-      "window": {
-       "start": "09:00",
-       "end": "17:00"
-      }
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 1 day more",
-     "meta": {
-      "delay": "1 day",
-      "window": {
-       "start": "09:00",
-       "end": "17:00"
-      }
-     }
-    },
-    {
-     "type": "sms",
-     "name": "Module 2 nudge",
-     "meta": {
-      "body": "Module 2 is open for you - it builds on the worksheet from module 1. Reply STOP to opt out."
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_quote_deal",
-   "name": "Quote Follow Up - Create Deal",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "survey_submitted",
-     "name": "Survey Submitted",
-     "filters": []
-    }
-   ],
-   "steps": [
-    {
-     "type": "create_opportunity",
-     "name": "Create quote opportunity",
-     "meta": {
-      "pipelineId": "pipe_sales",
-      "stageId": "stg_new"
-     }
-    },
-    {
-     "type": "sms",
-     "name": "Quote received text",
-     "meta": {
-      "body": "Got your details - your quote is being put together now. Reply STOP to opt out."
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_stage_a",
-   "name": "Stage Sync - Reopen Stale Bookings",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "opportunity_stage_changed",
-     "name": "Stage changed",
-     "filters": [
-      {
-       "field": "stage",
-       "value": "stg_booked"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "update_opportunity",
-     "name": "Move back to New Lead",
-     "meta": {
-      "pipelineId": "pipe_sales",
-      "stageId": "stg_new"
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_stage_b",
-   "name": "Stage Sync - Auto Book Qualified",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "opportunity_stage_changed",
-     "name": "Stage changed",
-     "filters": [
-      {
-       "field": "stage",
-       "value": "stg_new"
-      }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "update_opportunity",
-     "name": "Move to Call Booked",
-     "meta": {
-      "pipelineId": "pipe_sales",
-      "stageId": "stg_booked"
-     }
-    }
-   ]
-  },
-  {
-   "_id": "wf_order_intake",
-   "name": "Store Orders - Intake & Fulfillment Sync",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "inbound_webhook",
-     "name": "Order webhook from the store"
-    }
-   ],
-   "steps": [
-    {
-     "type": "webhook_reply",
-     "name": "Reject malformed orders",
-     "meta": {
-      "responseCode": 500
-     }
-    },
-    {
-     "type": "create_contact",
-     "name": "Create the buyer",
-     "meta": {
-      "email": "{{ inboundWebhookRequest.email }}",
-      "phone": "{{ inboundWebhookRequest.phone }}"
-     }
-    },
-    {
-     "type": "webhook",
-     "name": "Push to fulfillment",
-     "meta": {
-      "url": "{{ custom_values.integration_webhook_url }}"
-     }
-    },
-    {
-     "type": "wait",
-     "name": "Wait 5 minutes",
-     "meta": {
-      "delay": "5 minutes"
-     }
-    },
-    {
-     "type": "goto",
-     "name": "Try the push again",
-     "meta": {
-      "targetStepName": "Push to fulfillment"
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_ai_router",
-   "name": "AI Reply Router",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "customer_replied",
-     "name": "Inbound SMS"
-    }
-   ],
-   "steps": [
-    {
-     "type": "chatgpt",
-     "name": "Read the reply",
-     "meta": {
-      "prompt": "What does this lead want? Reply with the intent and a suggested response."
-     }
-    },
-    {
-     "type": "update_contact_field",
-     "name": "Record the intent",
-     "meta": {
-      "field": "lead_state",
-      "value": "{{ ai.intent }}"
-     }
-    },
-    {
-     "type": "if_else",
-     "name": "Route on intent",
-     "meta": {
-      "conditions": [
-       {
-        "field": "contact.lead_state",
-        "value": "interested"
-       }
+      "_id": "wf_reactivation",
+      "name": "Database Reactivation - Cold List",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag: reactivate",
+          "filters": [
+            {
+              "tag": "reactivate"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Is this still live?",
+          "meta": {
+            "body": "Quick one \u2014 is this still something you're working on?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 3 days"
+        },
+        {
+          "type": "sms",
+          "name": "Nudge",
+          "meta": {
+            "body": "Just checking back - grab a time here: https://bit.ly/3xR2mQ"
+          }
+        },
+        {
+          "type": "webhook",
+          "name": "Push to reporting",
+          "meta": {
+            "url": "https://hooks.example.com/inbound/reporting"
+          }
+        }
       ]
-     }
     },
     {
-     "type": "sms",
-     "name": "Send the AI draft",
-     "meta": {
-      "body": "{{ ai.reply_draft }}"
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_booking_stamp",
-   "name": "Booking - Stamp the Lead State",
-   "status": "published",
-   "triggers": [
+      "_id": "wf_review",
+      "name": "Review Request After Close",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag: job-complete",
+          "filters": [
+            {
+              "tag": "job-complete"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "if_else",
+          "name": "Had a complaint or refund - skip",
+          "meta": {
+            "conditions": [
+              {
+                "tag": "complaint"
+              },
+              {
+                "tag": "refund"
+              }
+            ]
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 7 days"
+        },
+        {
+          "type": "email",
+          "name": "Ask for the review",
+          "meta": {
+            "body": "How did we do? {{ custom_values.review_link }}"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Alert the team"
+        },
+        {
+          "type": "wait",
+          "name": "Wait 3 days"
+        },
+        {
+          "type": "sms",
+          "name": "Nudge with the link",
+          "meta": {
+            "body": "Here's the link: {{ custom_values.review_link }}"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Alert the team"
+        }
+      ]
+    },
     {
-     "type": "appointment_status",
-     "name": "Confirmed",
-     "filters": [
-      {
-       "field": "status",
-       "value": "confirmed"
+      "_id": "wf_sandbox",
+      "name": "ZZ SANDBOX - branch probe (do not use)",
+      "status": "published",
+      "triggers": [],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "test",
+          "meta": {
+            "body": "TODO write the real copy"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_hot_alert",
+      "name": "Hot Lead Alert",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged hot-lead",
+          "filters": [
+            {
+              "tag": "hot-lead"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Ping the closer",
+          "meta": {
+            "body": "Hot lead: {{ contact.name }}"
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Queue long-term nurture",
+          "meta": {
+            "tags": [
+              "nurture-me"
+            ]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_nurture",
+      "name": "Long Term Nurture",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged nurture-me",
+          "filters": [
+            {
+              "tag": "nurture-me"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Check-in 1",
+          "meta": {
+            "body": "Been a while - still thinking about it?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 30 days",
+          "meta": {
+            "delay": "30 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Check-in 2",
+          "meta": {
+            "body": "Doors close Friday {{ contact.first_name | default: 'there' }}, want back in?"
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Re-flag as hot",
+          "meta": {
+            "tags": [
+              "hot-lead"
+            ]
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
       }
-     ]
-    }
-   ],
-   "steps": [
-    {
-     "type": "update_contact_field",
-     "name": "Mark as booked",
-     "meta": {
-      "field": "lead_state",
-      "value": "booked"
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_nightly_sweep",
-   "name": "Nightly Reconciliation Sweep",
-   "status": "published",
-   "triggers": [
-    {
-     "type": "schedule",
-     "name": "Every night at 2am"
-    }
-   ],
-   "steps": [
-    {
-     "type": "update_contact_field",
-     "name": "Stamp the sweep",
-     "meta": {
-      "field": "last_swept_at",
-      "value": "{{ right_now.date }}"
-     }
-    }
-   ],
-   "settings": {}
-  },
-  {
-   "_id": "wf_n8n_gateway",
-   "name": "n8n - Webhook Verification Gateway",
-   "status": "published",
-   "triggers": [],
-   "steps": [
-    {
-     "type": "n8n-nodes-base.webhook",
-     "name": "Receive from GHL",
-     "typeVersion": 2,
-     "meta": {
-      "httpMethod": "POST",
-      "rawBody": true
-     }
     },
     {
-     "type": "n8n-nodes-base.code",
-     "name": "Verify X-WH-Signature",
-     "typeVersion": 2,
-     "meta": {
-      "jsCode": "// verify the X-WH-Signature header (RSA)\nreturn items;"
-     }
+      "_id": "wf_welcome_sms",
+      "name": "Welcome Text - New Lead",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Welcome text",
+          "meta": {
+            "fromNumber": "+1 (555) 010-8845",
+            "body": "Hi {{ contact.first_name }}, thanks for reaching out about {{ contact.servcie_interest }} - grab a time here: {{ custom_values.booking_link }}"
+          }
+        }
+      ],
+      "settings": {}
     },
     {
-     "type": "n8n-nodes-base.httpRequest",
-     "name": "Forward to the CRM",
-     "typeVersion": 4,
-     "meta": {
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1000,
-      "onError": "continueRegularOutput",
-      "url": "https://services.leadconnectorhq.com/contacts/upsert"
-     }
-    }
-   ],
-   "settings": {}
-  }
- ],
- "customFields": [
-  {
-   "fieldKey": "contact.service_interest",
-   "name": "Service Interest"
-  },
-  {
-   "fieldKey": "contact.lead_source_detail",
-   "name": "Lead Source Detail"
-  }
- ],
- "calendars": [
-  {
-   "id": "cal_strategy",
-   "name": "Strategy Call"
-  }
- ],
- "users": [
-  {
-   "id": "usr_owner",
-   "name": "Dana Reyes",
-   "active": true
-  },
-  {
-   "id": "usr_left",
-   "name": "Sam Whitlock",
-   "active": false
-  }
- ],
- "pipelines": [
-  {
-   "id": "pipe_sales",
-   "name": "Sales",
-   "stages": [
-    {
-     "id": "stg_new",
-     "name": "New Lead"
+      "_id": "wf_welcome_email",
+      "name": "Welcome Email - New Lead",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Welcome email",
+          "meta": {
+            "subject": "Welcome!",
+            "body": "Great to have you - here is what happens next."
+          }
+        }
+      ],
+      "settings": {}
     },
     {
-     "id": "stg_booked",
-     "name": "Call Booked"
+      "_id": "wf_speed",
+      "name": "Speed to Lead - 5 Minute Response",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Intake form",
+          "filters": [
+            {
+              "field": "formId",
+              "value": "form_intake"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Instant reply",
+          "id": "s1",
+          "next": "s2",
+          "meta": {
+            "body": "Thanks for reaching out! When's a good time to talk? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait for their reply",
+          "id": "s2",
+          "next": "s3",
+          "meta": {
+            "waitType": "contact_reply",
+            "delay": "unlimited"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Second touch",
+          "id": "s3",
+          "next": "s4",
+          "meta": {
+            "body": "Still keen? Happy to find a slot."
+          }
+        },
+        {
+          "type": "email",
+          "name": "Last touch",
+          "id": "s4",
+          "next": "s9missing",
+          "meta": {
+            "subject": "One more try",
+            "body": "Closing your file unless I hear back."
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Detached follow-up",
+          "id": "s7",
+          "parentKey": "s6-deleted",
+          "meta": {
+            "body": "Orphaned when the branch above was removed."
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
+      }
+    },
+    {
+      "_id": "wf_intake",
+      "name": "Lead Intake - Qualify & Route",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged intake",
+          "filters": [
+            {
+              "tag": "intake"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "if_else",
+          "name": "Qualified?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.service_interest",
+                "operator": "exists"
+              }
+            ],
+            "branches": [
+              {
+                "name": "Qualified",
+                "actions": [
+                  {
+                    "type": "add_contact_tag",
+                    "meta": {
+                      "tags": [
+                        "qualified"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "None",
+                "actions": []
+              }
+            ]
+          }
+        },
+        {
+          "type": "assign_round_robin",
+          "name": "Route to a rep",
+          "meta": {
+            "users": []
+          }
+        },
+        {
+          "type": "book_appointment",
+          "name": "Offer the strategy call",
+          "meta": {
+            "calendarId": "cal_deleted_2024"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Tell the owner",
+          "meta": {
+            "userId": "usr_left",
+            "body": "New qualified lead."
+          }
+        },
+        {
+          "type": "webhook",
+          "name": "Sync to the reporting sheet",
+          "meta": {
+            "url": "https://webhook.site/9d41c2aa-probe"
+          }
+        },
+        {
+          "type": "email",
+          "name": "What happens next",
+          "meta": {
+            "subject": "Next steps",
+            "body": "Here is what happens next. Book: {{ custom_values.booking_link }}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_rebook",
+      "name": "Cancelled - One Rebook Ask",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Cancelled",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "cancelled"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Sorry to miss you",
+          "meta": {
+            "body": "No problem - want to grab another time? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "email",
+          "name": "One more option",
+          "meta": {
+            "subject": "Another time?",
+            "body": "Here are a few more slots this week."
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": false
+      }
+    },
+    {
+      "_id": "wf_order",
+      "name": "Course Purchase - Thank You",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "order_form_submitted",
+          "name": "Order form",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Purchase confirmation",
+          "meta": {
+            "subject": "You're in!",
+            "body": "Thanks for your purchase - your order is confirmed. Receipt to follow."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_referral",
+      "name": "Referral Ask - Warm Clients",
+      "status": "draft",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged referral-ready",
+          "filters": [
+            {
+              "tag": "referral-ready"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "The ask",
+          "meta": {
+            "body": "Loved working with you - know anyone else who could use us? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 5 days",
+          "meta": {
+            "delay": "5 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "One nudge",
+          "meta": {
+            "body": "No pressure - the intro means a lot if someone comes to mind."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_onboarding",
+      "name": "Onboarding Drip - Paid Course",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "order_submitted",
+          "name": "Order Submitted",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Welcome text",
+          "meta": {
+            "body": "Welcome aboard - your login details are in your inbox. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 1 day",
+          "meta": {
+            "delay": "1 day",
+            "window": {
+              "start": "09:00",
+              "end": "17:00"
+            }
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": "2 days",
+            "window": {
+              "start": "09:00",
+              "end": "17:00"
+            }
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 1 day more",
+          "meta": {
+            "delay": "1 day",
+            "window": {
+              "start": "09:00",
+              "end": "17:00"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Module 2 nudge",
+          "meta": {
+            "body": "Module 2 is open for you - it builds on the worksheet from module 1. Reply STOP to opt out."
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_quote_deal",
+      "name": "Quote Follow Up - Create Deal",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "survey_submitted",
+          "name": "Survey Submitted",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "create_opportunity",
+          "name": "Create quote opportunity",
+          "meta": {
+            "pipelineId": "pipe_sales",
+            "stageId": "stg_new"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Quote received text",
+          "meta": {
+            "body": "Got your details - your quote is being put together now. Reply STOP to opt out."
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_stage_a",
+      "name": "Stage Sync - Reopen Stale Bookings",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "opportunity_stage_changed",
+          "name": "Stage changed",
+          "filters": [
+            {
+              "field": "stage",
+              "value": "stg_booked"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_opportunity",
+          "name": "Move back to New Lead",
+          "meta": {
+            "pipelineId": "pipe_sales",
+            "stageId": "stg_new"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_stage_b",
+      "name": "Stage Sync - Auto Book Qualified",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "opportunity_stage_changed",
+          "name": "Stage changed",
+          "filters": [
+            {
+              "field": "stage",
+              "value": "stg_new"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_opportunity",
+          "name": "Move to Call Booked",
+          "meta": {
+            "pipelineId": "pipe_sales",
+            "stageId": "stg_booked"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_order_intake",
+      "name": "Store Orders - Intake & Fulfillment Sync",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "inbound_webhook",
+          "name": "Order webhook from the store"
+        }
+      ],
+      "steps": [
+        {
+          "type": "webhook_reply",
+          "name": "Reject malformed orders",
+          "meta": {
+            "responseCode": 500
+          }
+        },
+        {
+          "type": "create_contact",
+          "name": "Create the buyer",
+          "meta": {
+            "email": "{{ inboundWebhookRequest.email }}",
+            "phone": "{{ inboundWebhookRequest.phone }}"
+          }
+        },
+        {
+          "type": "webhook",
+          "name": "Push to fulfillment",
+          "meta": {
+            "url": "{{ custom_values.integration_webhook_url }}"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 5 minutes",
+          "meta": {
+            "delay": "5 minutes"
+          }
+        },
+        {
+          "type": "goto",
+          "name": "Try the push again",
+          "meta": {
+            "targetStepName": "Push to fulfillment"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_ai_router",
+      "name": "AI Reply Router",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "customer_replied",
+          "name": "Inbound SMS"
+        }
+      ],
+      "steps": [
+        {
+          "type": "chatgpt",
+          "name": "Read the reply",
+          "meta": {
+            "prompt": "What does this lead want? Reply with the intent and a suggested response."
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Record the intent",
+          "meta": {
+            "field": "lead_state",
+            "value": "{{ ai.intent }}"
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Route on intent",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.lead_state",
+                "value": "interested"
+              }
+            ]
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Send the AI draft",
+          "meta": {
+            "body": "{{ ai.reply_draft }}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_booking_stamp",
+      "name": "Booking - Stamp the Lead State",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Confirmed",
+          "filters": [
+            {
+              "field": "status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_contact_field",
+          "name": "Mark as booked",
+          "meta": {
+            "field": "lead_state",
+            "value": "booked"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_nightly_sweep",
+      "name": "Nightly Reconciliation Sweep",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "schedule",
+          "name": "Every night at 2am"
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_contact_field",
+          "name": "Stamp the sweep",
+          "meta": {
+            "field": "last_swept_at",
+            "value": "{{ right_now.date }}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_n8n_gateway",
+      "name": "n8n - Webhook Verification Gateway",
+      "status": "published",
+      "triggers": [],
+      "steps": [
+        {
+          "type": "n8n-nodes-base.webhook",
+          "name": "Receive from GHL",
+          "typeVersion": 2,
+          "meta": {
+            "httpMethod": "POST",
+            "rawBody": true
+          }
+        },
+        {
+          "type": "n8n-nodes-base.code",
+          "name": "Verify X-WH-Signature",
+          "typeVersion": 2,
+          "meta": {
+            "jsCode": "// verify the X-WH-Signature header (RSA)\nreturn items;"
+          }
+        },
+        {
+          "type": "n8n-nodes-base.httpRequest",
+          "name": "Forward to the CRM",
+          "typeVersion": 4,
+          "meta": {
+            "retryOnFail": true,
+            "maxTries": 3,
+            "waitBetweenTries": 1000,
+            "onError": "continueRegularOutput",
+            "url": "https://services.leadconnectorhq.com/contacts/upsert"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_reply_bot",
+      "name": "AI Safety Demo - Inbound Reply Bot",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "inbound_message",
+          "name": "Customer texted us"
+        }
+      ],
+      "steps": [
+        {
+          "type": "conversation_ai",
+          "name": "Answer the question",
+          "meta": {
+            "prompt": "You are the front desk for the clinic. Answer the customer's question using the notes below, and book them in if they ask.\n\nCustomer message: {{message.body}}\nWhat they told us before: {{contact.notes}}"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Send the AI answer",
+          "meta": {
+            "body": "{{ai.reply}}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_qualifier",
+      "name": "AI Safety Demo - Qualifier Field Sync",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Intake form",
+          "filters": [
+            {
+              "field": "form",
+              "value": "Intake"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "ai_extract",
+          "name": "Pull budget and timeline out of the answer",
+          "meta": {
+            "prompt": "Read the answer below and return the budget and the timeline.\n\nAnswer: {{contact.custom_field.biggest_challenge}}"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Write budget and timeline to the record",
+          "meta": {
+            "fields": {
+              "budget": "{{ai.budget}}",
+              "timeline": "{{ai.timeline}}"
+            }
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_enrichment",
+      "name": "AI Safety Demo - Prompt Enrichment Webhook",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact"
+        }
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Score the lead with the model",
+          "meta": {
+            "method": "POST",
+            "url": "https://api.openai.com/v1/chat/completions",
+            "body": {
+              "model": "gpt-4o-mini",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Score this lead out of ten and say why. Name: {{contact.first_name}} {{contact.last_name}}. Phone: {{contact.phone}}. Email: {{contact.email}}. Address: {{contact.address1}}. Last payment on file: {{contact.custom_field.last_payment_reference}}."
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_aisafety_summariser",
+      "name": "AI Safety Demo - Review Summariser",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "survey_submitted",
+          "name": "Post-visit survey",
+          "filters": [
+            {
+              "field": "survey",
+              "value": "Post-visit"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "ai_summarize",
+          "name": "Summarise the feedback",
+          "meta": {
+            "prompt": "Summarise the feedback for the owner in one line.\n\n<feedback>\n{{survey.answer_1}}\n</feedback>"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Send the summary to the owner",
+          "meta": {
+            "body": "New feedback: {{ai.summary}}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_fixed_wait",
+      "name": "Calendar Booking Demo - Reminders On A Fixed Wait",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Confirmation",
+          "meta": {
+            "body": "You're booked in. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 1 day",
+          "meta": {
+            "delay": {
+              "value": 1,
+              "unit": "days"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "24 hour reminder",
+          "meta": {
+            "body": "Quick reminder - your call is tomorrow."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_backwards",
+      "name": "Calendar Booking Demo - Ladder Out Of Order",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "event_start_wait",
+          "name": "Until 1 hour before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {
+              "value": 1,
+              "unit": "hours",
+              "direction": "before"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "1 hour reminder",
+          "meta": {
+            "body": "See you shortly. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "event_start_wait",
+          "name": "Until 24 hours before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {
+              "value": 24,
+              "unit": "hours",
+              "direction": "before"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "24 hour reminder",
+          "meta": {
+            "body": "Reminder about your call. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_booking_links",
+      "name": "Calendar Booking Demo - Booking Links Out Of Account",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Send the booking link",
+          "meta": {
+            "body": "Grab a time that suits you: https://calendly.com/acme-sales/intro-call - reply STOP to opt out."
+          }
+        },
+        {
+          "type": "email",
+          "name": "Booking link email",
+          "meta": {
+            "subject": "Pick your time",
+            "body": "Here is the link: https://api.leadconnectorhq.com/widget/booking/7dQ2mKpX1nRvYtLzBa04"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_no_zone",
+      "name": "Calendar Booking Demo - Time With No Zone",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Confirmation",
+          "meta": {
+            "body": "You're all set for {{ appointment.start_time }}. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "timezone": "America/New_York"
+      }
+    },
+    {
+      "_id": "wf_cb_noshow_copy",
+      "name": "Calendar Booking Demo - No Show Copy On The Booked Lane",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": {
+              "value": 2,
+              "unit": "days"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Recovery text",
+          "meta": {
+            "body": "Sorry we missed you - want to pick another slot? Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_last_minute",
+      "name": "Calendar Booking Demo - Last Minute Reminder Only",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Booked",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "event_start_wait",
+          "name": "Until 15 minutes before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {
+              "value": 15,
+              "unit": "minutes",
+              "direction": "before"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Starting soon",
+          "meta": {
+            "body": "We're starting shortly. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_listblast",
+      "name": "Compliance SMS - Purchased List Blast",
+      "status": "published",
+      "triggers": [],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Opening text",
+          "meta": {
+            "body": "Hey {{ contact.first_name }}, quick question - are you still looking to get the roof sorted this year?"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_overnight",
+      "name": "Compliance SMS - Overnight Follow Up",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Quote request",
+          "filters": [
+            {
+              "field": "form",
+              "value": "Quote request"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Thanks for the request",
+          "meta": {
+            "body": "Thanks for the quote request - this is Dana at Northgate Roofing. When's a good time to talk it through?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Second touch",
+          "meta": {
+            "body": "Still happy to put that quote together whenever you're ready. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "sendingWindow": {
+          "start": "07:00",
+          "end": "22:00"
+        },
+        "timezone": "contact"
+      }
+    },
+    {
+      "_id": "wf_cs_renewal",
+      "name": "Compliance SMS - Renewal Nudge",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Renewal form",
+          "filters": [
+            {
+              "field": "form",
+              "value": "Renewal"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Renewal notice",
+          "meta": {
+            "body": "Your cover renews Friday - this is Dana at Northgate Roofing if anything needs changing before then. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "sendingWindow": {
+          "start": "08:00",
+          "end": "20:30"
+        },
+        "timezone": "contact"
+      }
+    },
+    {
+      "_id": "wf_cs_standby",
+      "name": "Compliance SMS - Standby Keyword Reply",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Standby signup",
+          "filters": [
+            {
+              "field": "form",
+              "value": "Standby signup"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Standby confirmation",
+          "meta": {
+            "body": "You're on standby with Northgate Roofing - we'll text the moment a slot opens up. Reply REMOVE to be taken off."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_apptkeyword",
+      "name": "Compliance SMS - Appointment Change Keyword",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment_status",
+          "name": "Appointment confirmed",
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Booking confirmed",
+          "meta": {
+            "body": "You're all set for Tuesday at 10am with Northgate Roofing. Reply CANCEL to cancel your appointment."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_taphouse",
+      "name": "Compliance SMS - Tap House Friday Promo",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "field": "tag",
+              "value": "sms-opt-in"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Friday promo",
+          "meta": {
+            "body": "Friday at the Northgate Tap House: two-for-one wine and tequila flights from 6pm. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cs_sameday",
+      "name": "Compliance SMS - Same Day Push",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Pricing page form",
+          "filters": [
+            {
+              "field": "form",
+              "value": "Pricing"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Instant reply",
+          "meta": {
+            "body": "Thanks for checking the pricing page - this is Dana at Northgate Roofing, want me to send the full breakdown?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 2 hours",
+          "meta": {
+            "delay": "2 hours"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Second push",
+          "meta": {
+            "body": "Sending the breakdown over now - anything specific you want priced up?"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 3 hours",
+          "meta": {
+            "value": 3,
+            "unit": "hours"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Third push",
+          "meta": {
+            "body": "Last one from me today - happy to hold a slot this week if you want it. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "di-web-lead-intake",
+      "name": "Data Integrity Demo - Web Lead Intake",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Website enquiry form",
+          "filters": [
+            {
+              "field": "form_id",
+              "value": "di-web-enquiry"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_contact_field",
+          "name": "Store the number they typed in",
+          "meta": {
+            "field": "phone",
+            "value": "({{ inbound_webhook.area_code }}) {{ inbound_webhook.line_number }}"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Store the callback time they asked for",
+          "meta": {
+            "field": "di_preferred_time",
+            "value": "weekday mornings"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Set the follow-up date",
+          "meta": {
+            "field": "follow_up_date",
+            "value": "ASAP"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Mark them a new enquiry",
+          "meta": {
+            "field": "di_lead_stage",
+            "value": "new-enquiry"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Mark them contacted",
+          "meta": {
+            "field": "di_lead_stage",
+            "value": "contacted"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Ping the owner",
+          "meta": {
+            "body": "New web enquiry - {{ contact.di_lead_stage }}, follow up {{ contact.follow_up_date }}"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Welcome text",
+          "meta": {
+            "body": "Thanks for getting in touch - we'll call you shortly. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "di-dormant-reactivation",
+      "name": "Data Integrity Demo - Dormant List Reactivation",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "opportunity_status_changed",
+          "name": "Deal marked lost",
+          "filters": [
+            {
+              "field": "status",
+              "value": "lost"
+            },
+            {
+              "field": "pipeline",
+              "value": "di-demo-pipeline"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "update_contact_field",
+          "name": "Clear DND so the win-back can go out",
+          "meta": {
+            "field": "dnd",
+            "value": false
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Win-back text",
+          "meta": {
+            "body": "It's been a while - we've got something new for you. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "di-repeat-buyer-sync",
+      "name": "Data Integrity Demo - Repeat Buyer Sync",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Repeat buyer form",
+          "filters": [
+            {
+              "field": "form_id",
+              "value": "di-repeat-buyer"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "add_contact_tag",
+          "name": "Tag them by town",
+          "meta": {
+            "tag": "city-{{ contact.city }}"
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Copy the deal size across",
+          "meta": {
+            "field": "deal_amount",
+            "value": "{{ contact.company_name }}"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Ping the account manager",
+          "meta": {
+            "body": "Repeat buyer - deal size {{ contact.deal_amount }}"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Repeat buyer offer",
+          "meta": {
+            "body": "Good to have you back - here's what's new this month. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_deliv_newsletter",
+      "name": "Email Deliverability Demo - Monthly Practice Newsletter",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Newsletter signup",
+          "filters": [
+            {
+              "field": "form_name",
+              "value": "Deliverability Demo - Newsletter Signup"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Newsletter - issue one",
+          "meta": {
+            "subject": "What we are seeing at the practice this month",
+            "body": "Hi there - three quick things from the practice this month. Our new hygienist starts on the 3rd, evening appointments are open again on Thursdays, and the front desk number has changed. Everything else is the same as always.\n\nExample Dental Co\n{{unsubscribe}}"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 30 days",
+          "meta": {
+            "stopOnResponse": true
+          }
+        },
+        {
+          "type": "email",
+          "name": "Newsletter - issue two",
+          "meta": {
+            "subject": "April opening hours",
+            "body": "Hi there - April hours are set. We are open late on Thursdays until the end of the month and closed over the bank holiday weekend. Call the front desk if you need a slot held for someone.\n\nExample Dental Co\n{{unsubscribe}}"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_deliv_owner_inbox",
+      "name": "Email Deliverability Demo - Quote Follow Up From Owner Inbox",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Quote request",
+          "filters": [
+            {
+              "field": "form_name",
+              "value": "Deliverability Demo - Quote Request"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Quote follow up - day one",
+          "meta": {
+            "fromName": "The Practice",
+            "fromEmail": "thepractice@gmail.com",
+            "subject": "Your quote from the practice",
+            "body": "Hi there - following up on the quote we put together. It is good for 14 days and covers everything we talked through in the chair.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 4 days",
+          "meta": {
+            "stopOnResponse": true
+          }
+        },
+        {
+          "type": "email",
+          "name": "Quote follow up - last note",
+          "meta": {
+            "fromName": "The Practice",
+            "fromEmail": "thepractice@gmail.com",
+            "subject": "Quick note about your quote",
+            "body": "Hi there - last note before the quote expires on Friday. Happy to walk you through the payment plan if that is the sticking point.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_deliv_image_only",
+      "name": "Email Deliverability Demo - Spring Promo Image Send",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Promo signup",
+          "filters": [
+            {
+              "field": "form_name",
+              "value": "Deliverability Demo - Promo Signup"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Spring promo - designed image",
+          "meta": {
+            "subject": "Spring at the practice",
+            "html": "<div style=\"text-align:center\"><a href=\"https://example.com/spring\"><img src=\"https://cdn.example.com/spring-promo.png\" width=\"600\"></a></div><p>Example Dental Co &middot; 12 Example Way, Springfield IL 62704 &middot; {{unsubscribe}}</p>"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_deliv_no_reply",
+      "name": "Email Deliverability Demo - Quote Reply Request",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Treatment plan request",
+          "filters": [
+            {
+              "field": "form_name",
+              "value": "Deliverability Demo - Treatment Plan Request"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "Treatment plan - ask for a yes",
+          "meta": {
+            "fromName": "Example Dental Co",
+            "fromEmail": "no-reply@mail.deliverability-demo.example",
+            "subject": "Your treatment plan is ready",
+            "body": "Hi there - your treatment plan is attached and the pricing holds for 14 days. Just reply to this email with a yes and we will get you booked in for the first appointment.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_deliv_spam_subject",
+      "name": "Email Deliverability Demo - Onboarding Offer Announcement",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "New patient enquiry",
+          "filters": [
+            {
+              "field": "form_name",
+              "value": "Deliverability Demo - New Patient Enquiry"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "email",
+          "name": "New patient offer",
+          "meta": {
+            "fromName": "Example Dental Co",
+            "fromEmail": "promos@send.deliverability-demo.example",
+            "subject": "CONGRATULATIONS - you have been selected for 100% FREE onboarding!!",
+            "body": "Hi there - new patient onboarding is open this month and we are covering the setup fee for the first twenty people who book. Any weekday works, just mention this note at the desk.\n\nExample Dental Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
+          }
+        }
+      ]
+    },
+    {
+      "_id": "wf_obs_fulfilment",
+      "name": "Observability Demo - Fulfilment Sync Retry",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "inbound_webhook",
+          "name": "Order paid"
+        }
+      ],
+      "steps": [
+        {
+          "id": "push",
+          "type": "n8n-nodes-base.httpRequest",
+          "name": "Send the order to fulfilment",
+          "typeVersion": 4,
+          "parameters": {
+            "method": "POST",
+            "url": "https://api.fulfilment-demo.example/v1/orders",
+            "sendBody": true,
+            "options": {}
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 10 minutes",
+          "meta": {
+            "delay": "10 minutes",
+            "stopOnResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "attempt_count under 3?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.attempt_count",
+                "operator": "lt",
+                "value": "3"
+              }
+            ]
+          }
+        },
+        {
+          "type": "goto",
+          "name": "Back to the push",
+          "meta": {
+            "targetStepId": "push"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_inventory",
+      "name": "Observability Demo - Inventory Push",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "tag": "obs-inventory-push"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Push inventory to the warehouse",
+          "meta": {
+            "method": "POST",
+            "url": "https://api.warehouse-demo.example/v2/inventory?api_key=Zk29fJq4Lm81PdTr03Xa7Bw5",
+            "headers": [
+              {
+                "name": "Authorization",
+                "value": "Bearer 8f2c1d94ab7e4f0b93c6e5a2d7b41c60"
+              }
+            ],
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Did the push come back OK?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "response.status",
+                "value": "200"
+              }
+            ]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_erase",
+      "name": "Observability Demo - Data Warehouse Erase Request",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "tag": "obs-erase-request"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Remove the person from the data warehouse",
+          "meta": {
+            "method": "DELETE",
+            "url": "https://api.warehouse-demo.example/v2/people/{{contact.id}}",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Came back clean?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "response.status",
+                "value": "204"
+              }
+            ]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_crm_sync",
+      "name": "Observability Demo - CRM Sync Error Branch",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_created",
+          "name": "New contact"
+        }
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Create the record in the accounting system",
+          "meta": {
+            "method": "PUT",
+            "url": "https://api.accounting-demo.example/v3/customers",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Sync failed?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "response.status",
+                "operator": "gte",
+                "value": "400"
+              }
+            ]
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Mark the sync as broken",
+          "meta": {
+            "tags": [
+              "err:obs-sync-failed"
+            ]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_import_alert",
+      "name": "Observability Demo - Import Stall Alert",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "tag": "err:obs-import-stalled"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell someone the import stalled",
+          "meta": {
+            "channel": "email",
+            "recipientUserId": "usr_obs_morgan",
+            "message": "The nightly import stalled for {{contact.first_name}}."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_duplicate_alert",
+      "name": "Observability Demo - Duplicate Contact Alert",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "tag": "obs-duplicate-found"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell someone we made a twin",
+          "meta": {
+            "channel": "email",
+            "recipientUserId": "usr_obs_morgan",
+            "message": "Possible duplicate contact: {{contact.email}}."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_obs_speed_alert",
+      "name": "Observability Demo - Speed To Lead Alert",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "tag": "obs-new-lead"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell someone a lead is waiting",
+          "meta": {
+            "channel": "sms",
+            "recipientUserId": "usr_obs_morgan",
+            "message": "New lead waiting: {{contact.first_name}}."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "rl-vendor-lead-intake",
+      "name": "Revenue Lifecycle Demo - Vendor Lead Intake",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "inbound_webhook",
+          "name": "Lead vendor push",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "wait",
+          "name": "Hold so we don't look automated",
+          "meta": {
+            "delay": "45 minutes"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "First contact",
+          "meta": {
+            "body": "Thanks for your interest - one of the team will be in touch shortly. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Two days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Second contact",
+          "meta": {
+            "body": "Just checking you got my last message. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "create_opportunity",
+          "name": "Open a deal for the new lead",
+          "meta": {
+            "pipelineId": "rl_pipe_revenue",
+            "stageId": "rl_stg_new"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "rl-consultation-nurture",
+      "name": "Revenue Lifecycle Demo - Consultation Nurture",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Consultation request form",
+          "filters": [
+            {
+              "field": "form_id",
+              "value": "rl-consult-request"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Offer a slot",
+          "meta": {
+            "body": "Thanks for the enquiry - book a call here and we'll go through it: {{ custom_values.rl_booking_link }} Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Two days",
+          "meta": {
+            "delay": "2 days"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Second nudge",
+          "meta": {
+            "body": "Still happy to grab a slot for you this week. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Three days",
+          "meta": {
+            "delay": "3 days"
+          }
+        },
+        {
+          "type": "email",
+          "name": "Last touch",
+          "meta": {
+            "subject": "Closing your file",
+            "body": "Haven't heard back, so I'll close this off unless you'd like to pick a time."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "rl-chargeback-received",
+      "name": "Revenue Lifecycle Demo - Chargeback Received",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "inbound_webhook",
+          "name": "Stripe chargeback received",
+          "filters": [
+            {
+              "field": "event",
+              "value": "charge.dispute.created"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "internal_notification",
+          "name": "Tell the owner",
+          "meta": {
+            "body": "Chargeback opened for {{ contact.first_name }} - the bank has taken the payment back."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "rl-cancellation-logged",
+      "name": "Revenue Lifecycle Demo - Cancellation Request Logged",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Cancellation request form",
+          "filters": [
+            {
+              "field": "form_id",
+              "value": "rl-cancel-request"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "add_contact_tag",
+          "name": "Mark them cancelled",
+          "meta": {
+            "tag": "cancelled-customer"
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Tell the account manager",
+          "meta": {
+            "body": "{{ contact.first_name }} has asked to cancel."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "rl-annual-renewal-push",
+      "name": "Revenue Lifecycle Demo - Annual Plan Renewal Push",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "order_submitted",
+          "name": "Annual plan purchased",
+          "filters": [
+            {
+              "field": "product",
+              "value": "rl-annual-plan"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "wait",
+          "name": "Wait until the plan is nearly up",
+          "meta": {
+            "delay": "11 months"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Renewal nudge",
+          "meta": {
+            "body": "Your plan expires in a couple of weeks - want me to renew it at the same rate? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "email",
+          "name": "Upgrade offer",
+          "meta": {
+            "subject": "Renew now and upgrade for the same price",
+            "body": "Your plan is up for renewal. Renew this month and we'll upgrade you to the next tier at no extra cost.\n\nRequena Automations, 14 Example Street, Springfield IL 62704. Unsubscribe: {{ contact.unsubscribe_link }}"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_scale_quote_runaway",
+      "name": "Scale Demo - Quote Sync Runaway",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged quote-requested",
+          "filters": [
+            {
+              "tag": "scale-quote-requested"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "q1",
+          "type": "webhook",
+          "name": "Ask the quoting engine for a price",
+          "next": "q2",
+          "meta": {
+            "method": "POST",
+            "url": "https://quotes.scale-demo.example/v1/price",
+            "saveResponse": true
+          }
+        },
+        {
+          "id": "q2",
+          "type": "if_else",
+          "name": "Did a price come back?",
+          "next": "q3",
+          "meta": {
+            "conditions": [
+              {
+                "field": "response.price",
+                "operator": "exists"
+              }
+            ]
+          }
+        },
+        {
+          "id": "q3",
+          "type": "sms",
+          "name": "Send the price",
+          "next": "q4",
+          "meta": {
+            "body": "Your quote is ready: {{ custom_values.quote_link }}. Reply STOP to opt out."
+          }
+        },
+        {
+          "id": "q4",
+          "type": "goto",
+          "name": "Price it again",
+          "meta": {
+            "targetStepId": "q1"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_scale_enrichment",
+      "name": "Scale Demo - Enrichment Lookup",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Intake form",
+          "filters": [
+            {
+              "field": "formId",
+              "value": "form_scale_intake"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "webhook",
+          "name": "Look up the company",
+          "meta": {
+            "method": "GET",
+            "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "if_else",
+          "name": "Is it a company we serve?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "response.industry",
+                "operator": "exists"
+              }
+            ]
+          }
+        },
+        {
+          "type": "webhook",
+          "name": "Look up the company again for the headcount",
+          "meta": {
+            "method": "GET",
+            "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "update_contact_field",
+          "name": "Write the headcount",
+          "meta": {
+            "field": "company_headcount",
+            "value": "{{ response.headcount }}"
+          }
+        },
+        {
+          "type": "webhook",
+          "name": "Look up the company a third time for the owner",
+          "meta": {
+            "method": "GET",
+            "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
+            "saveResponse": true
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Confirm we have their details",
+          "meta": {
+            "body": "Thanks {{ contact.first_name }} - got everything we need. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_scale_inventory_retry",
+      "name": "Scale Demo - Inventory Retry Ladder",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "inbound_webhook",
+          "name": "Order paid"
+        }
+      ],
+      "steps": [
+        {
+          "id": "r1",
+          "type": "webhook",
+          "name": "Reserve the stock",
+          "next": "r2",
+          "meta": {
+            "method": "POST",
+            "url": "https://inventory.scale-demo.example/v1/reserve",
+            "saveResponse": true,
+            "headers": {
+              "Idempotency-Key": "{{ contact.id }}-{{ inboundWebhookRequest.order_id }}"
+            }
+          }
+        },
+        {
+          "id": "r2",
+          "type": "wait",
+          "name": "Wait 2 minutes",
+          "next": "r3",
+          "meta": {
+            "delay": "2 minutes"
+          }
+        },
+        {
+          "id": "r3",
+          "type": "if_else",
+          "name": "Reserved, or under 3 tries?",
+          "next": "r4",
+          "meta": {
+            "conditions": [
+              {
+                "field": "response.reserved",
+                "operator": "is",
+                "value": "false"
+              },
+              {
+                "field": "contact.attempt_count",
+                "operator": "lt",
+                "value": "3"
+              }
+            ]
+          }
+        },
+        {
+          "id": "r4",
+          "type": "goto",
+          "name": "Try the reservation again",
+          "meta": {
+            "targetStepId": "r1"
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_scale_reactivation",
+      "name": "Scale Demo - 30 Day Reactivation",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Pricing form",
+          "filters": [
+            {
+              "field": "formId",
+              "value": "form_scale_pricing"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Day 0 - thanks",
+          "meta": {
+            "body": "Thanks for the details {{ contact.first_name }} - I'll send over the pricing shortly. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 10 days",
+          "meta": {
+            "delay": "10 days",
+            "stopOnResponse": true
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Day 10 - still interested?",
+          "meta": {
+            "body": "Still weighing it up {{ contact.first_name }}? Happy to answer anything. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "wait",
+          "name": "Wait 20 days",
+          "meta": {
+            "delay": "20 days",
+            "stopOnResponse": true
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Day 30 - last touch",
+          "meta": {
+            "body": "Closing your file unless I hear back {{ contact.first_name }}. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true,
+        "sendingWindow": {
+          "start": "09:00",
+          "end": "19:00",
+          "timezone": "contact"
+        }
+      }
+    },
+    {
+      "_id": "wf_scale_winback_feeder",
+      "name": "Scale Demo - Winback Feeder",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged winback",
+          "filters": [
+            {
+              "tag": "scale-winback"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Winback offer",
+          "meta": {
+            "body": "We kept your spot {{ contact.first_name }} - want it back? Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "add_to_workflow",
+          "name": "Hand off to the closer",
+          "meta": {
+            "targetWorkflowId": "wf_scale_winback_closer"
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
+      }
+    },
+    {
+      "_id": "wf_scale_winback_closer",
+      "name": "Scale Demo - Winback Closer",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tagged winback-closing",
+          "filters": [
+            {
+              "tag": "scale-winback-closing"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Closing offer",
+          "meta": {
+            "body": "Last call on the spot {{ contact.first_name }}. Reply STOP to opt out."
+          }
+        },
+        {
+          "type": "add_to_workflow",
+          "name": "Back to the feeder for another round",
+          "meta": {
+            "targetWorkflowId": "wf_scale_winback_feeder"
+          }
+        }
+      ],
+      "settings": {
+        "allowReentry": true
+      }
+    },
+    {
+      "_id": "wf_scale_intake_tree",
+      "name": "Scale Demo - Intake Decision Tree",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Triage form",
+          "filters": [
+            {
+              "field": "formId",
+              "value": "form_scale_triage"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "t1",
+          "type": "if_else",
+          "name": "Is it a new patient?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.patient_type",
+                "operator": "is",
+                "value": "new"
+              }
+            ]
+          }
+        },
+        {
+          "id": "t2",
+          "type": "if_else",
+          "name": "Are they insured?",
+          "parentKey": "t1-yes",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.insurance",
+                "operator": "exists"
+              }
+            ]
+          }
+        },
+        {
+          "id": "t3",
+          "type": "if_else",
+          "name": "In network?",
+          "parentKey": "t2-yes",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.insurer",
+                "operator": "is",
+                "value": "in-network"
+              }
+            ]
+          }
+        },
+        {
+          "id": "t4",
+          "type": "if_else",
+          "name": "Booking this week?",
+          "parentKey": "t3-yes",
+          "meta": {
+            "conditions": [
+              {
+                "field": "contact.preferred_week",
+                "operator": "is",
+                "value": "this"
+              }
+            ]
+          }
+        },
+        {
+          "id": "t5",
+          "type": "sms",
+          "name": "Send the in-network booking link",
+          "parentKey": "t4-yes",
+          "meta": {
+            "body": "You're in network {{ contact.first_name }} - book here: {{ custom_values.booking_link }}. Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
     }
-   ]
-  }
- ],
- "forms": [
-  {
-   "id": "form_intake",
-   "name": "Intake"
-  }
- ],
- "emailTemplates": [
-  {
-   "id": "tpl_welcome",
-   "name": "Welcome"
-  }
- ],
- "emailDomains": [
-  {
-   "domain": "mail.example-client.com",
-   "verified": false
-  }
- ],
- "emailSettings": {
-  "default_unsubscribe": false
- },
- "phoneNumbers": [
-  {
-   "number": "+15550109900",
-   "sms": true
-  }
- ],
- "tags": [
-  "hot-lead",
-  "nurture-me",
-  "reactivate",
-  "job-complete",
-  "vip"
- ],
- "stats": {
-  "wf_noshow": {
-   "enrollments": 412
-  },
-  "wf_missedcall": {
-   "enrollments": 88
-  },
-  "wf_reminders": {
-   "enrollments": 640
-  },
-  "wf_reactivation": {
-   "enrollments": 1204
-  },
-  "wf_review": {
-   "enrollments": 96
-  },
-  "wf_sandbox": {
-   "enrollments": 0
-  },
-  "wf_hot_alert": {
-   "enrollments": 51
-  },
-  "wf_nurture": {
-   "enrollments": 51
-  },
-  "wf_welcome_sms": {
-   "enrollments": 900
-  },
-  "wf_welcome_email": {
-   "enrollments": 900
-  },
-  "wf_intake": {
-   "enrollments": 0
-  },
-  "wf_speed": {
-   "enrollments": 233
-  },
-  "wf_rebook": {
-   "enrollments": 17
-  },
-  "wf_order": {
-   "enrollments": 41
-  },
-  "wf_onboarding": {
-   "enrollments": 130
-  },
-  "wf_quote_deal": {
-   "enrollments": 45
-  },
-  "wf_stage_a": {
-   "enrollments": 300
-  },
-  "wf_stage_b": {
-   "enrollments": 290
-  }
- },
- "config": {
-  "owned_domains": [
-   "example-client.com"
   ],
-  "stats_window_days": 90,
-  "reentry_policy": {
-   "Speed to Lead - 5 Minute Response": false,
-   "No Show Recovery": true
+  "customFields": [
+    {
+      "fieldKey": "contact.service_interest",
+      "name": "Service Interest"
+    },
+    {
+      "fieldKey": "contact.lead_source_detail",
+      "name": "Lead Source Detail"
+    },
+    {
+      "fieldKey": "contact.di_preferred_time",
+      "name": "Preferred Time"
+    },
+    {
+      "fieldKey": "contact.di_lead_stage",
+      "name": "Lead Stage"
+    },
+    {
+      "fieldKey": "contact.follow_up_date",
+      "name": "Follow Up Date"
+    },
+    {
+      "fieldKey": "contact.deal_amount",
+      "name": "Deal Amount"
+    }
+  ],
+  "calendars": [
+    {
+      "id": "cal_strategy",
+      "name": "Strategy Call"
+    },
+    {
+      "id": "CVokAlI8fgw4WYWoCtQz",
+      "name": "Calendar Booking Demo - Strategy Call"
+    }
+  ],
+  "users": [
+    {
+      "id": "usr_owner",
+      "name": "Dana Reyes",
+      "active": true
+    },
+    {
+      "id": "usr_left",
+      "name": "Sam Whitlock",
+      "active": false
+    },
+    {
+      "id": "usr_obs_morgan",
+      "name": "Morgan Ellis",
+      "active": true
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "pipe_sales",
+      "name": "Sales",
+      "stages": [
+        {
+          "id": "stg_new",
+          "name": "New Lead"
+        },
+        {
+          "id": "stg_booked",
+          "name": "Call Booked"
+        }
+      ]
+    },
+    {
+      "id": "rl_pipe_revenue",
+      "name": "Revenue Lifecycle Demo Pipeline",
+      "stages": [
+        {
+          "id": "rl_stg_new",
+          "name": "New Lead"
+        },
+        {
+          "id": "rl_stg_won",
+          "name": "Closed Won"
+        }
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "id": "form_intake",
+      "name": "Intake"
+    }
+  ],
+  "emailTemplates": [
+    {
+      "id": "tpl_welcome",
+      "name": "Welcome"
+    }
+  ],
+  "emailDomains": [
+    {
+      "domain": "mail.example-client.com",
+      "verified": false
+    },
+    {
+      "domain": "mail.deliverability-demo.example",
+      "verified": false
+    },
+    {
+      "domain": "send.deliverability-demo.example",
+      "verified": false
+    }
+  ],
+  "emailSettings": {
+    "default_unsubscribe": false,
+    "fromName": "Deliverability Demo",
+    "fromEmail": "hello@deliverability-demo.example",
+    "_note": "No postal address here on purpose \u2014 GHL059's fixture needs the account config present so the check runs, and the address genuinely absent so it fires."
   },
-  "send_window_policy": {
-   "Long Term Nurture": {
-    "start": "09:00",
-    "end": "20:00",
-    "timezone": "contact"
-   },
-   "Speed to Lead - 5 Minute Response": null
+  "phoneNumbers": [
+    {
+      "number": "+15550109900",
+      "sms": true
+    }
+  ],
+  "tags": [
+    "hot-lead",
+    "nurture-me",
+    "reactivate",
+    "job-complete",
+    "vip"
+  ],
+  "stats": {
+    "wf_noshow": {
+      "enrollments": 412
+    },
+    "wf_missedcall": {
+      "enrollments": 88
+    },
+    "wf_reminders": {
+      "enrollments": 640
+    },
+    "wf_reactivation": {
+      "enrollments": 1204
+    },
+    "wf_review": {
+      "enrollments": 96
+    },
+    "wf_sandbox": {
+      "enrollments": 0
+    },
+    "wf_hot_alert": {
+      "enrollments": 51
+    },
+    "wf_nurture": {
+      "enrollments": 51
+    },
+    "wf_welcome_sms": {
+      "enrollments": 900
+    },
+    "wf_welcome_email": {
+      "enrollments": 900
+    },
+    "wf_intake": {
+      "enrollments": 0
+    },
+    "wf_speed": {
+      "enrollments": 233
+    },
+    "wf_rebook": {
+      "enrollments": 17
+    },
+    "wf_order": {
+      "enrollments": 41
+    },
+    "wf_onboarding": {
+      "enrollments": 130
+    },
+    "wf_quote_deal": {
+      "enrollments": 45
+    },
+    "wf_stage_a": {
+      "enrollments": 300
+    },
+    "wf_stage_b": {
+      "enrollments": 290
+    }
   },
-  "required_steps": {
-   "Lead Intake - Qualify & Route": [
-    "Push to reporting - lead attributed"
-   ]
-  },
-  "transactional_workflows": []
- }
+  "config": {
+    "owned_domains": [
+      "example-client.com"
+    ],
+    "stats_window_days": 90,
+    "reentry_policy": {
+      "Speed to Lead - 5 Minute Response": false,
+      "No Show Recovery": true
+    },
+    "send_window_policy": {
+      "Long Term Nurture": {
+        "start": "09:00",
+        "end": "20:00",
+        "timezone": "contact"
+      },
+      "Speed to Lead - 5 Minute Response": null
+    },
+    "required_steps": {
+      "Lead Intake - Qualify & Route": [
+        "Push to reporting - lead attributed"
+      ]
+    },
+    "transactional_workflows": []
+  }
 }
