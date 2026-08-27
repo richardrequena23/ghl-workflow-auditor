@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # No dependencies to install — that is the point. unittest ships with
+      # Python, so the suite runs on a bare interpreter.
+      - name: Run the test suite
+        run: python -m unittest discover -s tests -v
+      - name: Audit the example account end to end
+        run: |
+          python -m ghlaudit examples/broken-account.json
+          python -m ghlaudit examples/broken-account.json -f json > /dev/null
+          python -m ghlaudit examples/broken-account.json -f html -o /tmp/a.html
+          python -m ghlaudit --list-rules
+
+      # Both of these files are generated, and both are read by people deciding
+      # whether to trust the tool: the example is what every rule is tested
+      # against, and docs/RULES.md is the public catalog. A stale one is worse
+      # than a missing one, because it looks authoritative while describing a
+      # version of the auditor that no longer exists. Fail the build instead.
+      - name: Generated files are current
+        run: |
+          python scripts/build_example.py --check
+          python scripts/gen_catalog.py --check
