@@ -378,8 +378,12 @@ def _opt_out_cleared(step: Step):
                 return slug(k), _as_text(v)
     # The action that carries no settings at all and says what it does in its
     # own type: "Remove DND", "Clear Unsubscribed".
-    if OPT_OUT_REMOVAL_TYPE.search(str(step.type or "")):
-        return slug(step.type), "off"
+    t = str(step.type or "")
+    if OPT_OUT_REMOVAL_TYPE.search(t):
+        low = t.lower()
+        flag = "dnd" if "dnd" in low or "disturb" in low else \
+            "unsubscribed" if "unsubscrib" in low else "opt_out"
+        return flag, ""
     return None
 
 
@@ -464,8 +468,10 @@ def opt_out_flag_cleared(acct: Account):
             below = wf.outbound_after(i)
             yield _finding(
                 "GHL072", "critical" if below else "high", wf,
-                f"'{key}' is written back to '{value}' here — messaging "
-                "re-opened for someone who opted out",
+                (f"'{key}' is written back to '{value}' here — messaging "
+                 "re-opened for someone who opted out" if value else
+                 f"This step switches '{key}' back off — messaging re-opened "
+                 "for someone who opted out"),
                 "That field is the record of a person telling you to stop, "
                 "and this account has no other copy of it. Writing it back to "
                 "off does two things at once: it re-opens the channel, and it "
@@ -475,7 +481,13 @@ def opt_out_flag_cleared(acct: Account):
                 + (f" This workflow then sends {len(below)} message"
                    f"{'s' if len(below) != 1 else ''} of its own, so the "
                    "first message after the flag is cleared goes out right "
-                   "here." if below else ""),
+                   "here." if below else "")
+                + " One build is not this: a workflow a contact enters BY "
+                  "asking to be messaged again (a START reply, a re-subscribe "
+                  "form) has to clear the flag, and is not reported. If this "
+                  "step is capturing a brand-new lead's stated preference "
+                  "rather than reversing an earlier stop, say so in the step "
+                  "name — as written it cannot be told from a wipe.",
                 "Delete the step. If DND was genuinely set in bulk by "
                 "mistake, correct those contacts individually with the reason "
                 "written down — never as a step on a live list. Where "
@@ -769,6 +781,10 @@ DATE_LITERAL = re.compile(
 # something I have tested. The unambiguous defect is free text like "ASAP".
 RELATIVE_DATE = re.compile(r"^(today|now|tomorrow|yesterday|current[_ ]?date)$",
                            re.I)
+# The words that join a date token to a time token. "{{ start_date }} at
+# {{ start_time }}" is one datetime assembled out of the two halves GHL stores
+# it in, not a date field with prose in it.
+DATE_JOINERS = {"at", "on", "to", "and", "am", "pm", "st", "nd", "rd", "th"}
 
 
 def _declared_kind(key: str) -> str:
@@ -812,8 +828,16 @@ def _unparseable(kind: str, value: str):
         rest = TOKEN.sub("", v).strip()
         # Only WORDS beside a token prove the result cannot parse. Punctuation,
         # digits and lone letters around one are how a date and a time, or a
-        # currency symbol and an amount, get assembled deliberately.
-        if rest and WORD.search(rest):
+        # currency symbol and an amount, get assembled deliberately — and so
+        # are the two or three words that join a date to a time ("{{ date }}
+        # at {{ time }}"), which is a composition somebody meant. That reprieve
+        # needs BOTH halves to be merge fields: "{{ day }} at 4pm" is a literal
+        # time typed into a date field, and still cannot parse.
+        words = [w.lower() for w in WORD.findall(rest)]
+        if kind == "date" and len(tokens) > 1 and words \
+                and all(w in DATE_JOINERS for w in words):
+            words = []
+        if rest and words:
             return f"glues a merge field to literal text — '{v}'", False
         # Two tokens run together can only ever produce one number after
         # another, which is not the quantity either of them holds. A date
@@ -979,11 +1003,12 @@ def _write_runs(wf: Workflow) -> list:
         if not _writes_fields(step):
             continue
         nxt = _next_step(wf, step, by_id)
-        if nxt is not None and _writes_fields(nxt):
+        if nxt is not None and _writes_fields(nxt) and nxt.step_id:
             linked[nxt.step_id] = step
     runs = []
     for step in wf.steps:
-        if not _writes_fields(step) or step.step_id in linked:
+        if not _writes_fields(step) \
+                or (step.step_id and step.step_id in linked):
             continue  # not the head of a run
         run, cur, seen = [], step, set()
         while cur is not None and _writes_fields(cur) \

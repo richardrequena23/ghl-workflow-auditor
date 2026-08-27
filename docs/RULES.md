@@ -318,7 +318,7 @@ Whether the message physically arrives. A sequence that is perfectly written and
 
 *What it looks like:* The delays in this workflow put 3 text messages on one phone inside 5 hours. The contact does not see a sequence, they see a business that will not stop texting them — and the reply that earns is STOP, from someone who was interested enough to be in the workflow in the first place. Opt-out and complaint rate is what carriers grade a sending number on, so a stacked sequence degrades delivery for every other workflow in the account as well.
 
-*The fix:* Spread the sequence: at most two texts in any 24 hours, with the later touches a day or more apart, and move the middle message to email. If speed genuinely matters, keep the fast pair and make everything after it conditional on no reply.
+*The fix:* Spread the sequence: at most two texts in any 24 hours, with the later touches a day or more apart, and move the middle message to email — the same content, on a channel nobody counts against you. If the speed is genuinely worth it, keep the fast pair and push the third touch to the following day.
 
 *What it costs:* The contacts this burns are the ones who opted in. An opt-out is permanent, and the complaint rate behind it is what gets the whole account's texts filtered.
 
@@ -978,7 +978,7 @@ Content and maintainability — placeholders, blank merge fields, references to 
 
 **Workflow switches a contact's opt-out back off** — `high` · tags: `data`, `compliance`
 
-*What it looks like:* That field is the record of a person telling you to stop, and this account has no other copy of it. Writing it back to off does two things at once: it re-opens the channel, and it erases the evidence, so afterwards nothing in the CRM shows the contact ever opted out and no later audit can identify who was affected. This workflow then sends 1 message of its own, so the first message after the flag is cleared goes out right here.
+*What it looks like:* That field is the record of a person telling you to stop, and this account has no other copy of it. Writing it back to off does two things at once: it re-opens the channel, and it erases the evidence, so afterwards nothing in the CRM shows the contact ever opted out and no later audit can identify who was affected. This workflow then sends 1 message of its own, so the first message after the flag is cleared goes out right here. One build is not this: a workflow a contact enters BY asking to be messaged again (a START reply, a re-subscribe form) has to clear the flag, and is not reported. If this step is capturing a brand-new lead's stated preference rather than reversing an earlier stop, say so in the step name — as written it cannot be told from a wipe.
 
 *The fix:* Delete the step. If DND was genuinely set in bulk by mistake, correct those contacts individually with the reason written down — never as a step on a live list. Where somebody really does opt back in, record the new consent (date, source, wording) in its own field and leave the original opt-out intact.
 

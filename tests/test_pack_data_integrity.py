@@ -482,6 +482,12 @@ class TypeMismatch(unittest.TestCase):
                        "{{ appointment.start_date }} {{ appointment.start_time }}")]
         self.assertNotIn("GHL075", rules_hit([wf("Intake", steps)]))
 
+    def test_two_date_tokens_joined_by_a_word_pass(self):
+        """"{{ date }} at {{ time }}" is the same composition, written out."""
+        steps = [write("last_appointment_date",
+                       "{{ appointment.start_date }} at {{ appointment.start_time }}")]
+        self.assertNotIn("GHL075", rules_hit([wf("Intake", steps)]))
+
     def test_free_text_in_a_number_field_fires(self):
         hits = rules_hit([wf("Intake", [write("deal_amount", "TBD")])])
         self.assertIn("GHL075", hits)

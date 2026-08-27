@@ -1171,8 +1171,9 @@ def texts_stacked_inside_one_day(acct: Account):
             "account as well.",
             "Spread the sequence: at most two texts in any 24 hours, with the "
             "later touches a day or more apart, and move the middle message to "
-            "email. If speed genuinely matters, keep the fast pair and make "
-            "everything after it conditional on no reply.",
+            "email — the same content, on a channel nobody counts against you. "
+            "If the speed is genuinely worth it, keep the fast pair and push "
+            "the third touch to the following day.",
             step=opener.name or opener.type, reach=worst,
             cost="The contacts this burns are the ones who opted in. An opt-out "
                  "is permanent, and the complaint rate behind it is what gets "
