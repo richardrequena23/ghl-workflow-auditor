@@ -1482,6 +1482,111 @@ class Scoring(unittest.TestCase):
         scores = [f.cost_score() for f in ranked]
         self.assertEqual(scores, sorted(scores, reverse=True))
 
+    def test_one_rule_repeated_is_one_root_cause(self):
+        from ghlaudit.rules import Finding
+        from ghlaudit.score import root_causes
+        many = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                        title="t", symptom="s", fix="f") for i in range(13)]
+        roots = root_causes(many)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0].sites, 13)
+        self.assertEqual(len(roots[0].workflows), 13)
+
+    def test_a_habit_costs_less_than_the_same_count_of_separate_defects(self):
+        """Thirteen sites of one rule must not grade like thirteen defects.
+
+        This is the whole point of grouping: an account with one systemic habit
+        has one thing to fix and should not sink below an account with a dozen
+        unrelated problems.
+        """
+        from ghlaudit.rules import Finding
+        habit = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                         title="t", symptom="s", fix="f") for i in range(13)]
+        spread = [Finding(rule=f"GHL{i:03d}", severity="high", workflow="w",
+                          title="t", symptom="s", fix="f")
+                  for i in range(1, 14)]
+        self.assertGreater(self.health(habit, [], 13).score,
+                           self.health(spread, [], 13).score)
+
+    def test_more_sites_still_costs_more(self):
+        """Diminishing, not free. Spread is real damage and has to register."""
+        from ghlaudit.rules import Finding
+        def n_sites(n):
+            f = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                         title="t", symptom="s", fix="f") for i in range(n)]
+            return self.health(f, [], 13).score
+        self.assertGreater(n_sites(1), n_sites(4))
+        self.assertGreater(n_sites(4), n_sites(13))
+
+    def test_a_systemic_high_still_outweighs_one_isolated_critical(self):
+        from ghlaudit.rules import Finding
+        habit = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                         title="t", symptom="s", fix="f") for i in range(13)]
+        crit = [Finding(rule="GHL015", severity="critical", workflow="w",
+                        title="t", symptom="s", fix="f")]
+        self.assertLess(self.health(habit, [], 13).score,
+                        self.health(crit, [], 13).score)
+
+    def test_the_categories_and_the_headline_share_one_budget(self):
+        """No category may outrank the headline while carrying all the damage.
+
+        The bug this locks out: every category used to be scored against the
+        whole account's tolerance while the headline was scored against that
+        same figure for all five at once, so a report could show categories at
+        A and B above an F. If one category holds every finding, its score and
+        the headline must not disagree in that direction.
+        """
+        from ghlaudit.rules import Finding
+        f = [Finding(rule=f"GHL{i:03d}", severity="high", workflow=f"w{i}",
+                     title="t", symptom="s", fix="f", category="compliance")
+             for i in range(1, 9)]
+        hs = self.health(f, [], 13)
+        compliance = next(c for c in hs.categories if c.key == "compliance")
+        self.assertLessEqual(compliance.score, hs.score)
+
+    def test_a_small_category_is_not_judged_on_a_big_one_s_allowance(self):
+        """Ten rules do not get the same tolerance as fifty-four."""
+        from ghlaudit.score import _tolerance
+        self.assertLess(_tolerance(13, "deliverability"),
+                        _tolerance(13, "routing"))
+        self.assertLess(_tolerance(13, "routing"), _tolerance(13))
+
+    def test_the_summary_line_leads_with_root_causes(self):
+        from ghlaudit.report import summary_line
+        from ghlaudit.rules import Finding
+        many = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                        title="t", symptom="s", fix="f") for i in range(13)]
+        line = summary_line(many, 13)
+        self.assertIn("1 root cause showing up in 13 places", line)
+
+    def test_the_fix_list_names_one_job_once(self):
+        """A to-do list that repeats the same job is a worse to-do list."""
+        from ghlaudit.rules import Finding
+        many = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                        title="t", symptom="s", fix="f") for i in range(13)]
+        hs = self.health(many, [], 13)
+        self.assertEqual(len(hs.ranked), 13)
+        self.assertEqual(len(hs.fix_order), 1)
+        self.assertEqual(hs.fix_order[0][1], 13)
+
+    def test_the_client_report_still_names_every_site(self):
+        """Grouping must not cost the reader the list of places to go.
+
+        Sites and workflows are counted separately on purpose: four AI-verdict
+        branches inside one sequence are four places to fix and one workflow to
+        open, and a report that calls that "4 workflows" is simply wrong.
+        """
+        from ghlaudit.report import as_html
+        from ghlaudit.rules import Finding
+        f = [Finding(rule="GHL041", severity="high", workflow="Qualification",
+                     step=f"Sync verdict - {tag}", title="t", symptom="s",
+                     fix="f") for tag in ("HOT", "WARM", "COLD")]
+        html = as_html(f, 13, [])
+        self.assertIn("3 places across 1 workflow", html)
+        for tag in ("HOT", "WARM", "COLD"):
+            self.assertIn(f"Sync verdict - {tag}", html)
+        self.assertNotIn("3 workflows", html)
+
     def test_reach_widens_the_blast_radius(self):
         from ghlaudit.rules import Finding
         small = Finding(rule="GHL003", severity="high", workflow="a",

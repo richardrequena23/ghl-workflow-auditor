@@ -261,13 +261,22 @@ up account-wide — the finding then asks whether this sequence is on its remove
 ## The health score
 
 ```
-damage    = 25 per critical + 12 per high + 5 per medium + 2 per low
-tolerance = 8 points per published workflow
-score     = 100 - (100 × damage / (damage + tolerance))
+root cause = one rule, everywhere it fires on the account
+damage     = for each root cause, severity weight × √(number of sites)
+             weights: 25 critical, 12 high, 5 medium, 2 low
+tolerance  = 8 points per published workflow, shared out across the categories
+score      = 100 - (100 × damage / (damage + tolerance))
 ```
 
-A saturating curve, chosen for three properties:
+A saturating curve over root causes, chosen for four properties:
 
+- **A habit is one defect, not N.** An account that never handles a webhook failure has
+  made one decision, whether it is wrong in one workflow or in thirteen — and a person
+  fixing it has one thing to do. Charging it thirteen times reports thirteen problems,
+  and drops an account with one systemic habit below an account with a dozen unrelated
+  defects. The repeats are still real, so they are priced at √sites: rising, with
+  diminishing returns. The ordering that matters survives it — a high-severity habit
+  across thirteen workflows (43) still outweighs one isolated critical (25).
 - **No single finding can fail an account.** One critical on an otherwise healthy
   account is a bad day, not an F. A scoring model that overreacts once gets ignored
   forever after.
@@ -276,9 +285,19 @@ A saturating curve, chosen for three properties:
   it absorbs proportionally more findings before the grade moves. Twelve findings on
   sixty workflows is a well-run account; twelve on six is a fire.
 
-Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F below. The same formula produces the five
-category scores — **compliance**, **deliverability**, **routing**, **hygiene**,
-**dead weight** — so they are comparable to each other and to the total.
+Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F below. The five category scores —
+**compliance**, **deliverability**, **routing**, **hygiene**, **dead weight** — come off
+the same curve and the same budget: each category gets the share of the tolerance that
+matches the share of the catalog able to fire in it, so a ten-rule category is not
+measured against a fifty-four-rule category's allowance.
+
+That last part is a correction. Until Sep-2026 every category was scored against the
+*entire* account's tolerance while the headline was scored against that same figure for
+all five categories at once — the same allowance spent five times over. A real
+thirteen-workflow account came back with Deliverability at 90 (A) and Hygiene at 50
+sitting above a headline of 16 (F). Both numbers were computed correctly and they could
+not both be describing the same account. A tool that argues with itself inside one table
+does not get believed about either number.
 
 **A category whose every check was skipped reports as "not assessed", never as 100.**
 That distinction is the point: a clean report and an unrun report must not look the same.
@@ -333,7 +352,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,015 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,024 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.

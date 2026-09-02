@@ -20,7 +20,7 @@ import json
 from collections import Counter
 
 from .rules import Finding, RULES, SEVERITIES
-from .score import CATEGORY_LABEL, HealthScore, health
+from .score import CATEGORY_LABEL, HealthScore, health, root_causes
 
 ICON = {"critical": "!!", "high": "! ", "medium": "~ ", "low": "· "}
 SEVERITY_LABEL = {"critical": "Critical", "high": "High", "medium": "Medium",
@@ -32,11 +32,21 @@ def _counts(findings: list[Finding]) -> Counter:
 
 
 def summary_line(findings: list[Finding], workflows: int) -> str:
+    """The one line that has to survive being read on a phone.
+
+    It leads with the root-cause count because that is the number the reader
+    acts on: 81 findings sounds like 81 jobs, and it is 19. The finding count
+    stays, because how widely a defect has spread is the other half of the
+    picture, but it is now framed as reach rather than as workload.
+    """
     if not findings:
         return f"{workflows} workflows audited. Nothing found."
     c = _counts(findings)
     parts = [f"{c[s]} {s}" for s in SEVERITIES if c[s]]
-    return f"{workflows} workflows audited. {len(findings)} findings: " + ", ".join(parts)
+    roots = len(root_causes(findings))
+    thing = "root cause" if roots == 1 else "root causes"
+    return (f"{workflows} workflows audited. {roots} {thing} showing up in "
+            f"{len(findings)} places: " + ", ".join(parts))
 
 
 def group_by_workflow(findings: list[Finding]) -> list[tuple[str, list[Finding]]]:
@@ -81,10 +91,17 @@ def as_text(findings: list[Finding], workflows: int, skips=None) -> str:
                    f"{len(cat.findings)} finding"
                    f"{'s' if len(cat.findings) != 1 else ''}")
 
-    if hs.ranked:
+    if hs.fix_order:
         out += ["", "Fix in this order — ranked by what each one costs:"]
-        for i, f in enumerate(hs.ranked[:5], 1):
-            out.append(f"  {i}. [{f.rule}] {f.title}  ({f.workflow})")
+        by_rule = {g.rule: g for g in hs.roots}
+        for i, (f, sites) in enumerate(hs.fix_order[:5], 1):
+            if sites == 1:
+                where = f.workflow
+            else:
+                n = len(by_rule[f.rule].workflows)
+                where = (f"{sites} places in {n} workflow"
+                         f"{'s' if n != 1 else ''}")
+            out.append(f"  {i}. [{f.rule}] {f.title}  ({where})")
 
     for name, items in group_by_workflow(findings):
         out += ["", name, "-" * len(name)]
@@ -249,6 +266,8 @@ a{color:var(--accent)}
 .chip.medium{color:var(--accent);border-color:var(--line)}
 .meta{color:var(--muted);font-size:12.5px;margin:0 0 14px;
   word-break:break-word}
+ul.sites{margin:6px 0 0;padding-left:18px}
+ul.sites li{margin:2px 0;line-height:1.5}
 .meta code{background:#0B151D;border:1px solid var(--line);border-radius:3px;
   padding:1px 5px;font-size:11.5px}
 .cost{border-left:2px solid var(--accent);padding:2px 0 2px 14px;margin:0 0 14px;
@@ -408,24 +427,50 @@ def as_html(findings: list[Finding], workflows: int, skips=None,
         p.append("</div>")
 
     # ---- findings, ranked by cost
-    if hs.ranked:
+    if hs.fix_order:
         p.append("<h2>Fix in this order</h2>")
         p.append('<p class="sub">Ranked by what each one costs you, not by '
                  'check number. The first item is the one losing you the most.</p>')
         p.append('<hr class="rule">')
-        for i, f in enumerate(hs.ranked, 1):
+        by_rule = {g.rule: g for g in hs.roots}
+        for i, (f, sites) in enumerate(hs.fix_order, 1):
             p.append(f'<div class="f {f.severity}">')
+            spread = (f'<span class="chip">{sites} places</span>'
+                      if sites > 1 else "")
             p.append('<div class="fhead">'
                      f'<span class="n">{i:02d}</span>'
                      f'<span class="chip {f.severity}">'
                      f'{SEVERITY_LABEL[f.severity]}</span>'
                      f'<span class="chip">{_esc(CATEGORY_LABEL[f.category])}'
                      '</span>'
-                     f'<span class="chip">{_esc(f.rule)}</span></div>')
+                     f'<span class="chip">{_esc(f.rule)}</span>'
+                     f'{spread}</div>')
             p.append(f"<h3>{_esc(f.title)}</h3>")
-            meta = f"Workflow: <code>{_esc(f.workflow)}</code>"
-            if f.step:
-                meta += f" &nbsp;&middot;&nbsp; Step: <code>{_esc(f.step)}</code>"
+            if sites > 1:
+                # One decision, several places. The checklist has to survive
+                # the grouping: name every site, with its step, or the reader
+                # has a job with no list of where to do it. Sites are counted
+                # separately from workflows because one workflow can hold
+                # several - four AI-verdict branches in one sequence is four
+                # places to fix and one workflow to open.
+                wfs = by_rule[f.rule].workflows
+                rows = []
+                for w in wfs:
+                    steps = [x.step for x in by_rule[f.rule].findings
+                             if x.workflow == w and x.step]
+                    line = f"<code>{_esc(w)}</code>"
+                    if steps:
+                        line += " &mdash; " + ", ".join(
+                            f"<code>{_esc(t)}</code>" for t in steps)
+                    rows.append(f"<li>{line}</li>")
+                noun = "workflow" if len(wfs) == 1 else "workflows"
+                meta = (f"{sites} places across {len(wfs)} {noun}:"
+                        f"<ul class=\"sites\">{''.join(rows)}</ul>")
+            else:
+                meta = f"Workflow: <code>{_esc(f.workflow)}</code>"
+                if f.step:
+                    meta += (" &nbsp;&middot;&nbsp; Step: "
+                             f"<code>{_esc(f.step)}</code>")
             p.append(f'<p class="meta">{meta}</p>')
             if f.cost:
                 p.append('<div class="cost"><span class="lbl">What it costs'
@@ -461,6 +506,13 @@ def as_html(findings: list[Finding], workflows: int, skips=None,
         "a low 2, and every published workflow buys 8 points of tolerance. No "
         "single finding can fail an account on its own, and the scale means a "
         "large account is not punished for being large.</p>")
+    p.append(
+        "<p><b>Root causes, not findings.</b> One rule breaking in thirteen "
+        "workflows is one decision to change, not thirteen problems, so it is "
+        "counted and charged once — with a rising, but not linear, allowance "
+        "for how far it has spread. That is why the list above is shorter than "
+        "the number of findings, and it is the number to plan the work from: "
+        "it is the count of jobs, not the count of places.</p>")
     p.append(
         "<p><b>Severity.</b> <i>Critical</i> — the account is sending customers "
         "something wrong right now. <i>High</i> — it will misfire under normal "
