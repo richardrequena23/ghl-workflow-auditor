@@ -375,20 +375,35 @@ hand, one at a time, against the raw export**. The ledger is
 marked `real` or `false_positive`, with a note saying why. `scripts/precision_report.py
 --summary` re-derives the number from it.
 
-**145 findings judged, 12 false positives — 8.3%.** Nothing is unjudged; an unjudged
+**145 findings judged, 34 false positives — 23.4%.** Nothing is unjudged; an unjudged
 finding is never counted as a pass, for the same reason the auditor reports a skipped
 check instead of silently omitting it.
 
-Every one of those 12 has been narrowed, and a re-run of the same account now produces
-**zero known false positives**. The four that mattered most, because each put wrong advice
-in front of an account owner:
+That number is worse than the one that stood here for an afternoon, and the difference is
+the whole argument for measuring. The first pass scored 8.3% because GHL007's twenty-two
+findings were marked `real` on the grounds that the *detection* was accurate, with a note
+saying the rule's premise had not been checked against GoHighLevel's documentation. A
+verdict with that note attached should never have been `real`. Checked properly, the
+premise was backwards and all twenty-two were false. **An unverified claim is not a pass,
+and recording it as one is how a measured number becomes a comfortable one.**
+
+All 34 have been narrowed, and a re-run of the same account now produces **zero known
+false positives** — 56 findings where there were 81. The five that mattered most, because
+each put wrong advice in front of an account owner:
 
 | Rule | What it wrongly claimed | Why it was wrong |
 |---|---|---|
+| GHL007 ×22 | `create_opportunity` is deprecated — *swap it* | backwards. GoHighLevel split the **combined** Create/Update action into two; `create_opportunity` is the replacement, and there is no `internal_` variant to swap to. The advice would have broken 21 working steps |
 | GHL015 | two live campaigns were "identical copies" — *unpublish one* | compared structure and never read the copy; a shared skeleton is good practice |
 | GHL003 | a workflow ignored replies through a "day-2 follow-up" | its two sends fired back to back; there was no wait for a reply to land in |
 | GHL025 | an appointment confirmation needed an unsubscribe link | Google's sender guidance exempts reservation confirmations |
 | GHL029 | an instant reply "goes out three days later, at any hour" | the wait was **one minute**, and the rule never read its duration |
+
+GHL007 is the one worth dwelling on. The rescue tool had *refused* to act on it, because
+GHL099 in the same catalog said the opposite — two rules disagreeing, neither checked
+against the vendor's own docs, and the disagreement sat there instead of being resolved.
+A catalog that contradicts itself in public loses the client's trust in all hundred rules,
+not the two.
 
 One account is a start and not a calibration set. The rate above is honest about what it
 covers: 145 findings on one real export, judged by one person. It is not a population

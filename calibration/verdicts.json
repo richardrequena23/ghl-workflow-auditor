@@ -14,12 +14,12 @@
  "verdicts": {
   "00ba9953abb55ac3": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Open an opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "02f7e4dd293f073d": {
@@ -84,12 +84,12 @@
   },
   "0c23ef4a8931d81f": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - wants to book",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "0c612224d8883fca": {
@@ -234,12 +234,12 @@
   },
   "1c656d933f74b9e3": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity for the human to work",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Dead Lead Reactivation"
   },
   "1de3118c20403bdc": {
@@ -294,12 +294,12 @@
   },
   "226a490495af5916": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Move to No-Show stage",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "No Show Recovery"
   },
   "252f40db94f1f987": {
@@ -314,12 +314,12 @@
   },
   "25b3fdd8e47abc30": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Move to Call Booked",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Strategy Call - Booking & Confirmation v2"
   },
   "270d174e99c44948": {
@@ -364,12 +364,12 @@
   },
   "30d6c1328e4c3d20": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - wants to book",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "30e16e1fedf5a659": {
@@ -404,12 +404,12 @@
   },
   "395ca5e2738abc98": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - objection",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "3b21f2ec6dc0d7cf": {
@@ -424,12 +424,12 @@
   },
   "3f1579742bd53626": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Missed Call Text Back"
   },
   "3ff07c0f14cf0651": {
@@ -474,12 +474,12 @@
   },
   "4480c54d8083176e": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create attributed opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "456ec4a588f3ca3f": {
@@ -594,12 +594,12 @@
   },
   "6b2b02d356ef08b0": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Open an opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "6ba02002c359e6ee": {
@@ -614,12 +614,12 @@
   },
   "7017916d1b7d5d54": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - question",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "7222e42debc9d558": {
@@ -684,12 +684,12 @@
   },
   "7cbb5c71dd9cd254": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Speed to Lead - 5 Minute Response"
   },
   "7d6fe77e02ff1519": {
@@ -804,12 +804,12 @@
   },
   "940b8a99813408f7": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create Opportunity in Coaching Sales Pipeline",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Strategy Call Appointment Workflow"
   },
   "94d1f8b152b56a9f": {
@@ -824,12 +824,12 @@
   },
   "967585ce2c8efe63": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Speed to Lead - 5 Minute Response"
   },
   "968d1e26e5d02088": {
@@ -904,12 +904,12 @@
   },
   "9e2ead6d42f2042c": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Move to No-Show stage",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "No Show Recovery"
   },
   "9f346fdf232a7524": {
@@ -984,12 +984,12 @@
   },
   "b120b0032fb2a2cb": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity for the human to work",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Dead Lead Reactivation"
   },
   "b3046e14b31327a2": {
@@ -1014,12 +1014,12 @@
   },
   "b48d4b379654a092": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - objection",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "b49a200d4dd01ae2": {
@@ -1054,12 +1054,12 @@
   },
   "b86a47bc10da23c8": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Missed Call Text Back"
   },
   "bb7507b41ca86c34": {
@@ -1104,12 +1104,12 @@
   },
   "c4df2fe9dc32e255": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - question",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "c830bce7faf7fdaf": {
@@ -1124,12 +1124,12 @@
   },
   "c8bf0a09cf527d64": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Move to Call Booked",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Strategy Call - Booking & Confirmation v2"
   },
   "c8d95f98099f45a2": {
@@ -1174,12 +1174,12 @@
   },
   "cb86888cb21e7b9c": {
    "account": "account-bundle-2026-09-01",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create attributed opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "cf33247ae3edee73": {
@@ -1364,12 +1364,12 @@
   },
   "f4d83d1f46688246": {
    "account": "requena-live-aug26",
-   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. The previous verdict marked this 'real' on the grounds that the detection was accurate (21 create_opportunity steps do exist) while flagging that the DEPRECATION claim had not been checked against GoHighLevel's documentation. Checked now, and the claim is backwards: GoHighLevel split the combined 'Create/Update Opportunity' action into two separate actions and is retiring the COMBINED one. 'create_opportunity' is the recommended replacement, not the deprecated action, and there is no 'internal_create_opportunity' to swap to. The rule fired 21 times on correct configuration and its fix text would have broken every one of those steps. The tool's own escalation had refused to act on it because GHL099 said the opposite \u2014 two rules in one catalog disagreeing, neither checked against the vendor. FIXED: GHL007 now matches only the combined create-and-update action and stays quiet on a naming it does not recognise.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create Opportunity in Coaching Sales Pipeline",
    "title": "'create_opportunity' is deprecated",
-   "verdict": "real",
+   "verdict": "false_positive",
    "workflow": "Strategy Call Appointment Workflow"
   },
   "f67dc9ec5924fb63": {

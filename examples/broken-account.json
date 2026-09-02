@@ -2233,6 +2233,14 @@
             "pipelineId": "rl_pipe_revenue",
             "stageId": "rl_stg_new"
           }
+        },
+        {
+          "type": "create_update_opportunity",
+          "name": "Legacy combined opportunity action",
+          "meta": {
+            "pipeline": "Sales",
+            "stage": "New"
+          }
         }
       ],
       "settings": {}

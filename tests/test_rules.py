@@ -180,13 +180,25 @@ class PortabilityRules(unittest.TestCase):
 
 
 class DataRules(unittest.TestCase):
-    def test_deprecated_opportunity_action(self):
-        steps = [{"type": "create_opportunity", "name": "Create"}]
+    def test_the_combined_opportunity_action_is_deprecated(self):
+        steps = [{"type": "create_update_opportunity", "name": "Create/Update"}]
         self.assertIn("GHL007", rules_hit([wf("Intake", steps)]))
 
-    def test_internal_variant_is_not_deprecated(self):
-        steps = [{"type": "internal_create_opportunity", "name": "Create"}]
-        self.assertNotIn("GHL007", rules_hit([wf("Intake", steps)]))
+    def test_the_split_actions_are_the_replacement_not_the_problem(self):
+        """The regression this rule shipped with, locked out.
+
+        GoHighLevel split the combined Create/Update Opportunity action into
+        two separate ones and is retiring the combined action. This rule flagged
+        the two REPLACEMENTS as deprecated and told the owner to swap them for
+        `internal_` variants that do not exist. It fired 21 times on one real
+        account, all of it correct configuration, and the advice would have
+        broken every one of those steps.
+        """
+        for t in ("create_opportunity", "update_opportunity",
+                  "internal_create_opportunity"):
+            steps = [{"type": t, "name": "Create"}]
+            self.assertNotIn("GHL007", rules_hit([wf("Intake", steps)]),
+                             f"{t} is a current action, not a deprecated one")
 
     def test_reentry_with_opportunity_creation(self):
         steps = [{"type": "create_opportunity", "name": "Create"}]

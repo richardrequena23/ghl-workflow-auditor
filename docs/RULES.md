@@ -1078,9 +1078,9 @@ Content and maintainability — placeholders, blank merge fields, references to 
 
 **Deprecated opportunity action** — `low` · tags: `maintenance`
 
-*What it looks like:* Existing workflows keep running, so nothing is broken today. But the action is flagged deprecated in the panel and will not be maintained.
+*What it looks like:* GoHighLevel split this into separate Create Opportunity and Update Opportunity actions and is retiring the combined one for new workflows. Existing workflows keep running, so nothing is broken today. The split actions do things this one cannot: update the opportunity that triggered the workflow, and act on one found by a Find Opportunity step.
 
-*The fix:* Swap to internal_create_opportunity when you next touch this workflow.
+*The fix:* Replace it with the separate 'Create Opportunity' or 'Update Opportunity' action next time you touch this workflow, and re-select the pipeline and stage afterwards.
 
 *What it costs:* Nothing today. It is maintenance debt that comes due on somebody else's schedule, not yours.
 

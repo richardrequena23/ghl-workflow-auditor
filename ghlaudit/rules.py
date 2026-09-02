@@ -468,20 +468,55 @@ def unresolved_placeholder(acct: Account):
                      "cost you the lead and a support conversation.")
 
 
+# The action GoHighLevel actually deprecated is the COMBINED create-or-update
+# opportunity action, replaced by two separate ones. Matching on "this type
+# mentions an opportunity and does both" keeps the rule quiet when the export
+# uses a naming this does not recognise, which is the right way round to fail:
+# see the note on the rule below for what happened when it was the other way.
+COMBINED_OPPORTUNITY = re.compile(
+    r"(?=.*opportunit)(?=.*creat)(?=.*updat)", re.I)
+
+
 @rule("GHL007", "Deprecated opportunity action", "low", "hygiene", "maintenance")
 def deprecated_action(acct: Account):
+    """The combined create-or-update opportunity action.
+
+    ⛔ This rule used to flag `create_opportunity` and `update_opportunity` and
+    tell the owner to swap them for `internal_` variants. That was backwards
+    and it was destructive advice. GoHighLevel split the combined
+    "Create/Update Opportunity" action into two separate actions and is
+    deprecating the COMBINED one for new workflows — `create_opportunity` is
+    the recommended replacement, not the problem. There is no `internal_`
+    action to swap to.
+
+    It fired 21 times on one real account, on entirely correct configuration,
+    and its own rescue tool refused to act on it because GHL099 said the
+    opposite. Two rules in the same catalog disagreeing, with neither checked
+    against the vendor's documentation, is how a catalog loses a client's
+    trust in all hundred of them.
+
+    Even where the combined action IS present, GoHighLevel keeps existing
+    workflows running — so this stays `low` and says so.
+    """
     for wf in acct.workflows:
-        hits = wf.steps_of("create_opportunity", "update_opportunity")
-        for step in hits:
+        for step in wf.steps:
+            if not COMBINED_OPPORTUNITY.search(step.type):
+                continue
             yield _finding(
                 "GHL007", "low", wf,
-                f"'{step.type}' is deprecated",
-                "Existing workflows keep running, so nothing is broken today. But the "
-                "action is flagged deprecated in the panel and will not be maintained.",
-                f"Swap to internal_{step.type} when you next touch this workflow.",
+                f"'{step.type}' is the combined opportunity action",
+                "GoHighLevel split this into separate Create Opportunity and "
+                "Update Opportunity actions and is retiring the combined one "
+                "for new workflows. Existing workflows keep running, so "
+                "nothing is broken today. The split actions do things this one "
+                "cannot: update the opportunity that triggered the workflow, "
+                "and act on one found by a Find Opportunity step.",
+                "Replace it with the separate 'Create Opportunity' or 'Update "
+                "Opportunity' action next time you touch this workflow, and "
+                "re-select the pipeline and stage afterwards.",
                 step=step.name or step.type,
-                cost="Nothing today. It is maintenance debt that comes due on somebody "
-                     "else's schedule, not yours.")
+                cost="Nothing today. It is maintenance debt that comes due on "
+                     "somebody else's schedule, not yours.")
 
 
 @rule("GHL011", "Re-enrollment on a workflow that creates records", "medium", "routing", "data")
