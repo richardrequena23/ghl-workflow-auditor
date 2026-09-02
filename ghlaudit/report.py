@@ -80,6 +80,13 @@ def as_text(findings: list[Finding], workflows: int, skips=None) -> str:
         summary_line(findings, workflows) + f"  [{hs.coverage}]",
         "",
     ]
+    if hs.capped:
+        out.append(f"This score is capped. The findings alone score "
+                   f"{hs.uncapped}; the ceilings below hold it at {hs.score}.")
+        for c in hs.caps:
+            out.append(f"  ceiling {c.limit}/100 — {c.reason}")
+            out.append(f"     to lift it: {c.lift}")
+        out.append("")
     for cat in hs.categories:
         if not cat.assessed:
             out.append(f"  {cat.label:<16} not assessed  "
@@ -134,6 +141,15 @@ def as_markdown(findings: list[Finding], workflows: int, skips=None) -> str:
     out = ["# GoHighLevel account audit", "",
            f"**Account health: {hs.score}/100 ({hs.grade})** — {hs.verdict}", "",
            summary_line(findings, workflows) + f" ({hs.coverage}.)", ""]
+
+    if hs.capped:
+        out += [f"> **This score is capped at {hs.score}.** The findings alone "
+                f"score {hs.uncapped}. A grade is a claim, and these are the "
+                "claims it is not allowed to make:", ""]
+        for c in hs.caps:
+            out += [f"> - **Ceiling {c.limit}/100** — {c.reason}  ",
+                    f">   *To lift it:* {c.lift}"]
+        out.append("")
 
     out += ["| Category | Score | Findings |", "|---|---|---|"]
     for cat in hs.categories:
@@ -266,6 +282,15 @@ a{color:var(--accent)}
 .chip.medium{color:var(--accent);border-color:var(--line)}
 .meta{color:var(--muted);font-size:12.5px;margin:0 0 14px;
   word-break:break-word}
+.ceilings{border:1px solid var(--line);border-radius:8px;padding:18px 20px;
+  margin:0 0 26px;background:var(--panel)}
+.ceilings h3{margin:0 0 6px;font-size:17px}
+.ceil{display:flex;gap:14px;align-items:flex-start;padding:12px 0;
+  border-top:1px solid var(--line)}
+.ceil:first-of-type{border-top:none}
+.cnum{font-size:22px;font-weight:700;min-width:44px;font-variant-numeric:tabular-nums}
+.creason{margin:0 0 5px;font-size:14px}
+.clift{margin:0;font-size:13.5px;color:var(--muted)}
 ul.sites{margin:6px 0 0;padding-left:18px}
 ul.sites li{margin:2px 0;line-height:1.5}
 .meta code{background:#0B151D;border:1px solid var(--line);border-radius:3px;
@@ -398,6 +423,23 @@ def as_html(findings: list[Finding], workflows: int, skips=None,
         f'<div class="g">Grade {hs.grade}</div></div><div>'
         f'<p class="verdict">{_esc(hs.verdict)}</p>'
         f'<p class="tally">{tally}</p></div></div>')
+
+    # ---- ceilings: why the number is not higher
+    if hs.capped:
+        p.append('<div class="ceilings">')
+        p.append(f'<h3>This score is capped at {hs.score}</h3>')
+        p.append('<p class="sub">The findings on their own score '
+                 f'<b>{hs.uncapped}</b>. A grade is a claim about an account, '
+                 'and these are the claims it is not allowed to make. Each one '
+                 'names exactly what would lift it.</p>')
+        for c in hs.caps:
+            p.append('<div class="ceil">')
+            p.append(f'<div class="cnum">{c.limit}</div>')
+            p.append(f'<div><p class="creason">{_esc(c.reason)}</p>'
+                     f'<p class="clift"><span class="lbl">To lift it</span>'
+                     f'{_esc(c.lift)}</p></div>')
+            p.append('</div>')
+        p.append('</div>')
 
     # ---- executive summary
     p.append("<h2>Executive summary</h2>")

@@ -53,7 +53,25 @@ from dataclasses import dataclass, field
 from .rules import CATEGORIES, RULES, SEVERITIES
 
 WEIGHT = {"critical": 25, "high": 12, "medium": 5, "low": 2}
-TOLERANCE_PER_WORKFLOW = 8
+
+# Four points of damage per published workflow before the grade starts moving.
+#
+# This was eight, and eight was not derived from anything. Four is, so here is
+# the derivation, which is the part that can be argued with:
+#
+#   An A claims "well built - what is left is maintenance, not repair." That
+#   describes an account with a couple of low-severity notes and nothing else:
+#   call it three lows, six points of damage, on a thirteen-workflow account.
+#   For six damage to still score 90 the tolerance has to be 54, or 4.2 per
+#   workflow.
+#
+#   A B claims "sound, with real defects, none of them on fire" - a handful of
+#   mediums, say four, twenty points. For twenty damage to score 80 the
+#   tolerance has to be 80, or 6.2 per workflow.
+#
+# The two anchors disagree, so the stricter one wins: a scale is only as
+# honest as its most demanding claim. Four per workflow, rounded down from 4.2.
+TOLERANCE_PER_WORKFLOW = 4
 
 # How much of the catalog can fire in each category. This is the share of the
 # tolerance budget the category gets, so a 10-rule category is not measured
@@ -83,6 +101,18 @@ CATEGORY_BLURB = {
 }
 
 GRADES = ((90, "A"), (80, "B"), (70, "C"), (60, "D"), (0, "F"))
+
+# Ceilings that no amount of good elsewhere can lift. Each one exists because
+# a grade is a claim, and there are claims the arithmetic must not be allowed
+# to make on the account's behalf.
+#
+# This is NOT the "no single finding can zero the account" principle being
+# reversed. That principle is about the raw curve, and it still holds - one
+# critical still leaves the other ninety-nine checks visible in the number. A
+# ceiling is a different statement: not "you scored badly" but "you cannot be
+# described this way while this is true."
+CRITICAL_CEILING = 59   # top of F
+HIGH_CEILING = 89       # top of B
 
 VERDICT = {
     "A": "Well built. What is left is maintenance, not repair.",
@@ -125,6 +155,84 @@ def _score(damage: float, tolerance: float) -> int:
     # as "nothing here works", which is a claim no finite set of findings
     # supports. 1 is the floor, and it still says everything a 0 would.
     return max(1, int(round(raw)))
+
+
+@dataclass
+class Ceiling:
+    """A cap on the grade, and the sentence that says why.
+
+    Reported, never silent. A score that has been held down without saying so
+    is a score nobody can act on — and the reason is usually the most useful
+    line in the whole report, because it names the one thing standing between
+    this account and a better grade.
+    """
+
+    limit: int
+    reason: str
+    lift: str
+
+    def to_dict(self) -> dict:
+        return {"limit": self.limit, "reason": self.reason, "lift": self.lift}
+
+
+def ceilings(findings: list, skips: list) -> list:
+    """Every ceiling that applies, worst first.
+
+    Three of them, and each answers a question the raw curve cannot:
+
+    **Coverage.** A check that could not run costs nothing today, which means
+    an account can be graded A while a tenth of the audit never examined
+    anything. "We found nothing" and "we could not look" have to be different
+    numbers, or the grade is partly a measure of how little was supplied. The
+    category scores already refuse to report an unassessed category as a clean
+    one; this is the same rule, finally applied to the headline.
+
+    **A live critical.** The F verdict reads "customers are receiving the wrong
+    messages right now." An account doing that cannot also be passing, however
+    tidy the rest of it is.
+
+    **A live high.** The A verdict reads "what is left is maintenance, not
+    repair." A high-severity finding is repair by definition — the catalog
+    defines high as "it will misfire under normal use, not just at an edge."
+    """
+    out = []
+    counts: dict = {}
+    for f in findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
+
+    ran = len(RULES) - len({s.rule for s in skips})
+    if ran < len(RULES):
+        missing = len(RULES) - ran
+        needs = sorted({s.needs for s in skips if getattr(s, "needs", "")})
+        out.append(Ceiling(
+            limit=int(round(100.0 * ran / len(RULES))),
+            reason=f"{missing} of {len(RULES)} checks could not run, so this "
+                   f"account has not been fully examined. A grade cannot claim "
+                   f"more certainty than the audit had.",
+            lift="Supply what the skipped checks need and re-run — "
+                 + ("; ".join(needs[:3]) + ("; …" if len(needs) > 3 else "")
+                    if needs else "see the coverage section.")))
+
+    if counts.get("critical"):
+        n = counts["critical"]
+        out.append(Ceiling(
+            limit=CRITICAL_CEILING,
+            reason=f"{n} critical finding{'s' if n != 1 else ''} still open. "
+                   "A critical means customers are receiving the wrong "
+                   "messages right now; an account doing that is not passing, "
+                   "whatever the rest of it looks like.",
+            lift="Clear the critical findings. Nothing else moves this."))
+    elif counts.get("high"):
+        n = counts["high"]
+        out.append(Ceiling(
+            limit=HIGH_CEILING,
+            reason=f"{n} high-severity finding{'s' if n != 1 else ''} still "
+                   "open. An A says what is left is maintenance rather than "
+                   "repair, and a high-severity defect is repair — it "
+                   "misfires under normal use, not only at an edge.",
+            lift="Clear the high-severity findings to make an A reachable."))
+
+    return sorted(out, key=lambda c: c.limit)
 
 
 @dataclass
@@ -224,6 +332,8 @@ class HealthScore:
     skips: list
     categories: list
     roots: list = field(default_factory=list)
+    caps: list = field(default_factory=list)
+    uncapped: int = 0
 
     @property
     def grade(self) -> str:
@@ -271,9 +381,22 @@ class HealthScore:
         ran = len(RULES) - len({s.rule for s in self.skips})
         return f"{ran} of {len(RULES)} checks ran"
 
+    @property
+    def capped(self) -> bool:
+        """Is the reported score lower than the curve alone produced?"""
+        return bool(self.caps) and self.score < self.uncapped
+
+    @property
+    def binding_cap(self):
+        """The ceiling actually holding the score down, if any."""
+        return next((c for c in self.caps if c.limit <= self.score), None)
+
     def to_dict(self) -> dict:
         return {
             "score": self.score, "grade": self.grade, "verdict": self.verdict,
+            "uncapped_score": self.uncapped,
+            "capped": self.capped,
+            "ceilings": [c.to_dict() for c in self.caps],
             "workflows_audited": self.workflows,
             "counts": self.counts,
             "root_causes": len(self.roots),
@@ -289,7 +412,9 @@ def health(findings: list, skips: list, workflows: int) -> HealthScore:
     workflows = max(0, int(workflows))
     roots = root_causes(findings)
     damage = sum(g.damage for g in roots)
-    overall = _score(damage, _tolerance(workflows))
+    uncapped = _score(damage, _tolerance(workflows))
+    caps = ceilings(findings, skips)
+    overall = min([uncapped] + [c.limit for c in caps])
 
     # Which rules could have contributed to each category at all. Needed so a
     # category whose every check was skipped reports as not assessed instead of
@@ -316,4 +441,5 @@ def health(findings: list, skips: list, workflows: int) -> HealthScore:
             roots=my_roots))
 
     return HealthScore(score=overall, workflows=workflows, findings=findings,
-                       skips=skips, categories=cats, roots=roots)
+                       skips=skips, categories=cats, roots=roots,
+                       caps=caps, uncapped=uncapped)
