@@ -25,6 +25,7 @@ clean report that was never actually run.
       },
       "required_steps": {"Lead Attribution": ["Push to reporting - booked"]},
       "transactional_workflows": ["Receipt", "Password Reset"],
+      "external_tags": ["job-complete", "vip"],
       "stats_window_days": 90
     }
 
@@ -83,6 +84,20 @@ class AuditConfig:
     # instant lead responses. Exempt from marketing-only checks.
     transactional_workflows: list = field(default_factory=list)
 
+    # Tags applied from outside the workflow builder — by a human, a form, a
+    # bulk action, an integration. A tag trigger fires on the tag arriving from
+    # anywhere, so "no workflow here adds it" is not proof the workflow is dead,
+    # and the only person who knows where it really comes from is the one who
+    # runs the account. Declaring a tag here says "we know, it is applied by X"
+    # and GHL018 stops asking about it.
+    #
+    # This exists because the alternative is worse. GHL018 reports a published,
+    # sending workflow behind an unfed tag at HIGH, which is right when the
+    # add-tag step was never built and wrong when an ops team applies it by hand
+    # on completion. Without a way to say so, a correct account is flagged at
+    # high severity forever and learns to ignore the report.
+    external_tags: list = field(default_factory=list)
+
     # How far back the enrollment stats (if any) reach.
     stats_window_days: int = 90
 
@@ -121,6 +136,8 @@ class AuditConfig:
             required_steps=required,
             transactional_workflows=[_norm_name(n) for n in
                                      _str_list(data.get("transactional_workflows"))],
+            external_tags=[t.lower() for t in
+                           _str_list(data.get("external_tags"))],
             stats_window_days=window_days,
         )
 
@@ -147,6 +164,10 @@ class AuditConfig:
 
     def required_step_names(self, workflow_name: str) -> list:
         return self.required_steps.get(_norm_name(workflow_name), [])
+
+    def tag_comes_from_outside(self, tag: str) -> bool:
+        """Did the caller tell us this tag is applied outside the builder?"""
+        return str(tag).lower() in self.external_tags
 
     def is_transactional(self, workflow_name: str) -> bool:
         return _norm_name(workflow_name) in self.transactional_workflows

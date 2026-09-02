@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Account-specific context, supplied by whoever is running the audit.",
-    "Nothing in here can be inferred from a workflow export — it is what the",
+    "Nothing in here can be inferred from a workflow export \u2014 it is what the",
     "person who designed the account knows and the JSON does not. Every key is",
     "optional; an empty config is valid, it just means more checks report as",
     "not-assessed rather than passing.",
@@ -12,24 +12,29 @@
     "which is what examples/broken-account.json does so the demo runs in one",
     "command. A --config file on the command line replaces that block."
   ],
-
-  "owned_domains": ["example-client.com"],
-
+  "owned_domains": [
+    "example-client.com"
+  ],
   "reentry_policy": {
     "Speed to Lead - 5 Minute Response": false,
     "No Show Recovery": true
   },
-
   "send_window_policy": {
-    "Long Term Nurture": {"start": "09:00", "end": "20:00", "timezone": "contact"},
+    "Long Term Nurture": {
+      "start": "09:00",
+      "end": "20:00",
+      "timezone": "contact"
+    },
     "Speed to Lead - 5 Minute Response": null
   },
-
   "required_steps": {
-    "Lead Intake - Qualify & Route": ["Push to reporting - lead attributed"]
+    "Lead Intake - Qualify & Route": [
+      "Push to reporting - lead attributed"
+    ]
   },
-
   "transactional_workflows": [],
-
-  "stats_window_days": 90
+  "stats_window_days": 90,
+  "external_tags": [
+    "job-complete"
+  ]
 }

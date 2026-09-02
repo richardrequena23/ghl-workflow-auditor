@@ -948,6 +948,13 @@ def orphan_tag_trigger(acct: Account):
         tags = wf.trigger_tags()
         if not tags or tags & added:
             continue
+        # The caller can tell us a tag is applied by a human, a form, a bulk
+        # action or an integration. That is the one thing an export cannot show,
+        # and without a way to say it a correctly built account gets flagged at
+        # high severity forever. Only silence the tags actually declared.
+        tags = {t for t in tags if not acct.config.tag_comes_from_outside(t)}
+        if not tags:
+            continue
         missing = ", ".join(sorted(tags))
 
         # What is sitting behind the closed door?

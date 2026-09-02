@@ -493,6 +493,19 @@ class OrphanTagRules(unittest.TestCase):
         a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")], status="draft")
         self.assertNotIn("GHL018", rules_hit([a]))
 
+    def test_a_declared_external_tag_is_not_a_finding(self):
+        """Where a tag comes from is the one thing an export cannot show."""
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")])
+        cfg = AuditConfig.from_dict({"external_tags": ["VIP"]})
+        self.assertNotIn("GHL018", rules_hit([a], config=cfg))
+
+    def test_declaring_one_tag_does_not_silence_another(self):
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip"), tag_trigger("gold")])
+        cfg = AuditConfig.from_dict({"external_tags": ["vip"]})
+        [f] = findings_for("GHL018", [a], config=cfg)
+        self.assertIn("gold", f.title)
+        self.assertNotIn("vip", f.title)
+
 
 # ==========================================================================
 # GHL019+ — the account-aware checks

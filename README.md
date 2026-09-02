@@ -181,9 +181,17 @@ guessed — and drift in either direction is a finding.
   },
   "required_steps": {"Attribution": ["Push to reporting - booked"]},
   "transactional_workflows": ["Receipts"],
+  "external_tags": ["job-complete"],
   "stats_window_days": 90
 }
 ```
+
+`external_tags` is the same idea pointed at a tag rather than a workflow. A tag trigger
+fires on the tag arriving from anywhere, so "no workflow here adds it" is not proof the
+sequence is dead — an ops team may apply it by hand on completion. GHL018 reports a
+published, sending workflow behind an unfed tag at **high**, which is right when the
+add-tag step was never built and wrong when a human applies it. Naming the tag here says
+"we know where it comes from" and the check stops asking.
 
 See [`examples/audit-config.json`](examples/audit-config.json). Every key is optional.
 Workflow names match case- and whitespace-insensitively.
@@ -352,7 +360,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,041 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,043 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
