@@ -9,9 +9,9 @@
 | Severity | Count | Means |
 |---|---:|---|
 | **critical** | 15 | the account is texting customers something wrong, right now |
-| **high** | 45 | it will misfire under normal use, not just at an edge |
+| **high** | 46 | it will misfire under normal use, not just at an edge |
 | **medium** | 33 | it will bite on scale, on handover, or on a bad day |
-| **low** | 7 | correctness is fine; maintenance or future-proofing is not |
+| **low** | 6 | correctness is fine; maintenance or future-proofing is not |
 
 ## Categories
 
@@ -46,7 +46,7 @@ The health score is graded on these five axes, so a category with no findings is
 | [GHL015](#ghl015) | high | Two workflows enroll on the identical trigger |
 | [GHL016](#ghl016) | medium | Greeting merges a contact field with no fallback |
 | [GHL017](#ghl017) | high | SMS sequence carries no opt-out language |
-| [GHL018](#ghl018) | low | Nothing adds the tag this workflow waits for |
+| [GHL018](#ghl018) | high | Nothing adds the tag this workflow waits for |
 | [GHL019](#ghl019) | critical | Conditional wait with no timeout |
 | [GHL020](#ghl020) | critical | Reference to something that does not exist |
 | [GHL021](#ghl021) | high | Condition branch with nothing in it |
@@ -1110,6 +1110,16 @@ Content and maintainability — placeholders, blank merge fields, references to 
 
 Things that exist and do nothing. Not urgent, but every one of them is a thing a future maintainer has to read and rule out.
 
+### GHL018
+
+**Nothing adds the tag this workflow waits for** — `high` · tags: `triggers`, `hygiene`
+
+*What it looks like:* This workflow's only trigger waits for that tag, and the tag appears nowhere else in this account: no step adds it, no step removes it, no branch reads it, no message mentions it. The workflow is published and configured to contact customers, so either something outside this export applies the tag, or this sequence has never run for anybody. An audit cannot tell those apart from the outside — but nothing here supports the first one, and the usual cause is an add-tag step that was never built, or the same tag typed two different ways.
+
+*The fix:* Find where the tag is meant to come from and confirm it in the contact record of someone who should have entered. If another workflow was supposed to apply it, add that step; if it is applied by hand or by an integration, say so in the workflow description so the next audit stops flagging it.
+
+*What it costs:* 1 customer-facing message is configured here and may never have been sent. The work is built and paid for; it is one tag away from running.
+
 ### GHL037
 
 **Finished build sitting in draft** — `medium` · tags: `hygiene`
@@ -1139,16 +1149,6 @@ Things that exist and do nothing. Not urgent, but every one of them is a thing a
 *The fix:* Add the stage moves to the workflows that already own those events: the booking workflow moves the deal to Booked, the order workflow marks it Won. Then compare the pipeline against the calendar for last month — the gap between them is how wrong the reporting has been.
 
 *What it costs:* Every sales number the owner looks at is understated, and nobody can tell which channel or which campaign produced the revenue — the pipeline holds the deals but not the outcome.
-
-### GHL018
-
-**Nothing adds the tag this workflow waits for** — `low` · tags: `triggers`, `hygiene`
-
-*What it looks like:* This workflow only starts when that tag lands on a contact, and no workflow here applies it. If the tag comes from a form, a bulk action or a human, all is well — but if another workflow was supposed to add it, that step is missing or the tag name is misspelled, and this sequence has silently never run. Tag names must match exactly.
-
-*The fix:* Confirm where the tag is meant to come from. If it is another workflow, add or correct its add-tag step; if it is manual, note that in the workflow name so the next auditor does not ask.
-
-*What it costs:* If the tag was supposed to come from another workflow, this sequence has never run once — and everything it was built to do has silently not been happening.
 
 ### GHL026
 

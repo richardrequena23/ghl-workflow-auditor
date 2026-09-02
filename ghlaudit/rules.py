@@ -905,11 +905,43 @@ def sms_without_opt_out(acct: Account):
                  "and the symptom the client reports is 'leads stopped replying'.")
 
 
-@rule("GHL018", "Nothing adds the tag this workflow waits for", "low", "dead_weight", "triggers", "hygiene")
+@rule("GHL018", "Nothing adds the tag this workflow waits for", "high", "dead_weight", "triggers", "hygiene")
 def orphan_tag_trigger(acct: Account):
+    """A tag-triggered workflow whose tag nothing in the account applies.
+
+    A tag trigger fires on the tag arriving from anywhere — a form, a bulk
+    action, an integration, a human clicking it — so an unfed tag is not proof
+    the workflow is dead, and this rule does not claim it is.
+
+    It does grade on what is at stake, because two very different situations
+    were being reported identically. A tag-triggered workflow with no outbound
+    steps is housekeeping: if it never runs, nobody notices, and that is a low.
+    A published workflow that texts and emails customers, whose only way in is
+    a tag that appears NOWHERE else in this export — not added, not removed,
+    not branched on, not named in any copy — is a build that was paid for and
+    may never have sent a single message. The evidence does not prove it is
+    dead, but it is the only trace an audit can see, and reporting it at the
+    same weight as a tidy-up note buries it.
+
+    The "appears nowhere else" test is what separates the two. A tag a human
+    really does apply by hand tends to leave fingerprints — a branch that reads
+    it, a step that clears it, a mention in a message. A tag with no fingerprint
+    at all is most often a step that was never built or a name that was typed
+    twice, differently.
+    """
     added: set[str] = set()
     for w in acct.workflows:
         added |= w.tags_added()
+
+    # Every place a tag name can legitimately show up other than the trigger
+    # that waits for it: an add-tag or remove-tag step, a branch condition, a
+    # filter, message copy. Built once, from the whole account.
+    elsewhere = " ".join(
+        [w.text() for w in acct.workflows]
+        + [t.filter_blob() for w in acct.workflows for t in w.triggers
+           if not w.published or True]
+    ).lower()
+
     for wf in acct.published():
         if not wf.triggers or not all("tag" in t.type.lower() for t in wf.triggers):
             continue  # another trigger type can still start it
@@ -917,6 +949,44 @@ def orphan_tag_trigger(acct: Account):
         if not tags or tags & added:
             continue
         missing = ", ".join(sorted(tags))
+
+        # What is sitting behind the closed door?
+        sends = len(wf.sms_steps) + len(wf.email_steps)
+        # Does any of these tags leave a trace outside its own trigger? Each
+        # trigger serialises its tag twice (the value and the filter blob), so
+        # the floor for "only the trigger knows about it" is two per waiting
+        # workflow — anything above that is a real second mention.
+        waiting = sum(1 for w in acct.workflows for t in w.triggers
+                      if tags & t.tag_values())
+        traces = sum(elsewhere.count(t.lower()) for t in tags)
+        unmentioned = traces <= waiting * 2
+
+        if sends and unmentioned:
+            yield _finding(
+                "GHL018", "high", wf,
+                f"Published, sends {sends} message{'s' if sends != 1 else ''}, "
+                f"and the only way in is '{missing}' — which nothing here adds",
+                "This workflow's only trigger waits for that tag, and the tag "
+                "appears nowhere else in this account: no step adds it, no step "
+                "removes it, no branch reads it, no message mentions it. The "
+                "workflow is published and configured to contact customers, so "
+                "either something outside this export applies the tag, or this "
+                "sequence has never run for anybody. An audit cannot tell those "
+                "apart from the outside — but nothing here supports the first "
+                "one, and the usual cause is an add-tag step that was never "
+                "built, or the same tag typed two different ways.",
+                "Find where the tag is meant to come from and confirm it in the "
+                "contact record of someone who should have entered. If another "
+                "workflow was supposed to apply it, add that step; if it is "
+                "applied by hand or by an integration, say so in the workflow "
+                "description so the next audit stops flagging it.",
+                reach=sends,
+                cost=f"{sends} customer-facing message"
+                     f"{'s are' if sends != 1 else ' is'} configured here and may "
+                     "never have been sent. The work is built and paid for; it is "
+                     "one tag away from running.")
+            continue
+
         yield _finding(
             "GHL018", "low", wf,
             f"No workflow in this account adds '{missing}'",
@@ -1034,28 +1104,45 @@ def dangling_reference(acct: Account):
                   "survey": "surveys", "template": "templates"}
     workflow_ids = {w.id for w in acct.workflows if w.id}
 
+    # One class of reference needs nothing but the export in hand: a step that
+    # jumps a contact into another workflow, or pulls them out of one, names a
+    # workflow — and the workflows are right here. This used to sit inside the
+    # object-list branch below, so on a workflows-only export the whole rule
+    # reported itself skipped and never made the one check it could have made.
+    # A critical check that goes blind on data it is holding is worse than a
+    # missing check, because the coverage line says it was only unsupplied.
+    misses: dict = {}
+    if workflow_ids:
+        for wf in acct.published():
+            for step in wf.steps:
+                for kind, ident in step.entity_refs():
+                    if kind == "workflow" and ident not in workflow_ids:
+                        misses.setdefault((wf.name, kind), []).append(
+                            (step.name or step.type, ident))
+
     have_any = any(inv.has(bucket_for[k]) for k in checkable if k in bucket_for)
     if not have_any:
+        # Still a skip: the calendar, user, pipeline and template references
+        # genuinely cannot be judged, and coverage must keep saying so. The
+        # workflow-to-workflow findings above stand on their own.
+        yield from _dangling_findings(acct, misses)
         yield Skip(
             rule="GHL020",
             title="Reference to something that does not exist",
             reason="No account object lists were supplied, so a reference to a "
                    "deleted calendar, user, pipeline or template cannot be told "
-                   "apart from one that simply was not in this export.",
+                   "apart from one that simply was not in this export. "
+                   "Workflow-to-workflow references were checked.",
             needs="calendars / users / pipelines / forms / surveys / "
                   "emailTemplates in the input bundle",
             category="hygiene")
         return
 
-    misses: dict = {}
     for wf in acct.published():
         for step in wf.steps:
             for kind, ident in step.entity_refs():
                 if kind == "workflow":
-                    if workflow_ids and ident not in workflow_ids:
-                        misses.setdefault((wf.name, kind), []).append(
-                            (step.name or step.type, ident))
-                    continue
+                    continue  # already done above
                 bucket = bucket_for.get(kind)
                 if not bucket or not inv.has(bucket):
                     continue
@@ -1076,6 +1163,11 @@ def dangling_reference(acct: Account):
                         cost="Every notification this step sends goes nowhere. "
                              "Leads it was meant to surface are never seen.")
 
+    yield from _dangling_findings(acct, misses)
+
+
+def _dangling_findings(acct: Account, misses: dict):
+    """Emit one critical per (workflow, reference kind) that did not resolve."""
     for (wf_name, kind), hits in sorted(misses.items()):
         wf = next(w for w in acct.published() if w.name == wf_name)
         names = ", ".join(sorted({h[0] for h in hits}))

@@ -467,6 +467,32 @@ class OrphanTagRules(unittest.TestCase):
                [tag_trigger("vip"), {"type": "form_submitted"}])
         self.assertNotIn("GHL018", rules_hit([a]))
 
+    # The severity split. A published workflow that messages customers, gated
+    # behind a tag with no fingerprint anywhere in the account, is a build that
+    # may never have run — not the same news as an unfed housekeeping workflow.
+    def test_unfed_tag_on_a_sending_workflow_is_high(self):
+        a = wf("VIP Onboarding", [sms(), email()], [tag_trigger("vip")])
+        [f] = findings_for("GHL018", [a])
+        self.assertEqual("high", f.severity)
+        self.assertIn("vip", f.title)
+
+    def test_unfed_tag_with_no_sends_stays_low(self):
+        a = wf("Internal Bookkeeping", [tag_step("seen")], [tag_trigger("vip")])
+        [f] = findings_for("GHL018", [a])
+        self.assertEqual("low", f.severity)
+
+    def test_unfed_tag_mentioned_elsewhere_stays_low(self):
+        """A tag something reads is a tag a human plausibly applies by hand."""
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")])
+        b = wf("Nurture", [sms("Ask", "reply VIP for the vip upgrade")],
+               [{"type": "form_submitted"}])
+        [f] = findings_for("GHL018", [a, b])
+        self.assertEqual("low", f.severity)
+
+    def test_draft_workflow_is_not_reported(self):
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")], status="draft")
+        self.assertNotIn("GHL018", rules_hit([a]))
+
 
 # ==========================================================================
 # GHL019+ — the account-aware checks
@@ -609,6 +635,34 @@ class DanglingReferenceRules(unittest.TestCase):
                   "meta": {"calendarId": "cal_deleted"}}]
         findings, skips = audit_all([wf("Intake", steps)])
         self.assertNotIn("GHL020", {f.rule for f in findings})
+        self.assertIn("GHL020", {s.rule for s in skips})
+
+    # A workflow reference needs no inventory: the workflows are the export.
+    # This half used to sit behind the inventory gate, so a workflows-only
+    # bundle reported the whole rule skipped and never made the one check it
+    # could have made.
+    def test_dangling_workflow_reference_needs_no_inventory(self):
+        steps = [{"type": "remove_from_workflow", "name": "Stop nurture",
+                  "meta": {"workflow_id": "wf_deleted"}}]
+        found = findings_for("GHL020", [wf("Intake", steps)])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "critical")
+        self.assertIn("workflow", found[0].title)
+
+    def test_a_live_workflow_reference_passes(self):
+        target = wf("Nurture", [sms()])
+        steps = [{"type": "remove_from_workflow", "name": "Stop nurture",
+                  "meta": {"workflow_id": "Nurture"}}]
+        self.assertNotIn("GHL020", rules_hit([wf("Intake", steps), target]))
+
+    def test_the_inventory_skip_still_fires_alongside_it(self):
+        """Checking one half is not a licence to claim the rule ran."""
+        steps = [{"type": "remove_from_workflow", "name": "Stop nurture",
+                  "meta": {"workflow_id": "wf_deleted"}},
+                 {"type": "book_appointment", "name": "Book",
+                  "meta": {"calendarId": "cal_deleted"}}]
+        findings, skips = audit_all([wf("Intake", steps)])
+        self.assertIn("GHL020", {f.rule for f in findings})
         self.assertIn("GHL020", {s.rule for s in skips})
 
 
