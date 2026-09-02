@@ -233,6 +233,35 @@ class Step:
         walk(self.raw)
         return "\n".join(out)
 
+    def wait_minutes(self):
+        """How long this wait holds, in minutes. None when it is unbounded.
+
+        A reply-wait with no duration can hold for days, so None means "assume
+        long" — the conservative read for any rule asking whether a send has
+        drifted away from the hour its trigger fired in.
+        """
+        if not self.is_wait:
+            return None
+        raw = self.raw if isinstance(self.raw, dict) else {}
+        # Same nesting problem as the message body: `attributes` in a workflow
+        # export, `meta` in a snapshot, sometimes flat on the step.
+        sources = [raw.get(k) for k in ("attributes", "meta", "data")]
+        sources = [d for d in sources if isinstance(d, dict)] + [raw]
+        after = next((d["startAfter"] for d in sources
+                      if isinstance(d.get("startAfter"), dict)), None)
+        if after is None:
+            return None
+        try:
+            value = float(after.get("value"))
+        except (TypeError, ValueError):
+            return None
+        unit = str(after.get("type", "")).lower()
+        per = {"minutes": 1, "minute": 1, "hours": 60, "hour": 60,
+               "days": 1440, "day": 1440, "weeks": 10080, "week": 10080}
+        if unit not in per:
+            return None
+        return value * per[unit]
+
     def tags_added(self) -> set[str]:
         """Tags this step puts ON a contact. Remove-tag steps return nothing."""
         t = self.type.lower()
@@ -662,6 +691,28 @@ class Workflow:
 
     def trigger_signatures(self) -> list:
         return [t.signature() for t in self.triggers]
+
+    def sends_across_a_wait(self) -> bool:
+        """Is there a send, then a pause, then another send?
+
+        The window a reply can arrive in. Two messages fired back to back — an
+        SMS and the same content by email, say — are one touch delivered twice,
+        and no reply can land between them, so a rule about ignoring replies
+        has nothing to bite on. A real account had a reply-triggered workflow
+        whose only two sends went out together flagged for "nothing listening
+        for a reply"; the symptom described a day-2 follow-up the workflow did
+        not have.
+        """
+        seen_send = False
+        waited = False
+        for step in self.steps:
+            if step.is_outbound:
+                if seen_send and waited:
+                    return True
+                seen_send = True
+            elif step.is_wait and seen_send:
+                waited = True
+        return False
 
     def outbound_after(self, index: int) -> list[Step]:
         """Sends that sit below a given step — the size of the leak below it."""

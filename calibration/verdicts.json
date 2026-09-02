@@ -1,5 +1,10 @@
 {
  "accounts": {
+  "account-bundle-2026-09-01": {
+   "findings": 77,
+   "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-01.json",
+   "workflows": 13
+  },
   "requena-live-aug26": {
    "findings": 83,
    "path": "/private/tmp/claude-501/-Users-richardrequena-Documents-CLOSE-CRM/392f0d60-6ecf-4f43-a614-041329042772/scratchpad/live-bundle-2026-08-26-1834.json",
@@ -9,12 +14,22 @@
  "verdicts": {
   "00ba9953abb55ac3": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Open an opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "02f7e4dd293f073d": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "Tag as ai-cold",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "030900632fec8e4f": {
@@ -27,24 +42,64 @@
    "verdict": "false_positive",
    "workflow": "Dead Lead Reactivation"
   },
+  "03793d038a6b414b": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Follow up by email",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Missed Call Text Back"
+  },
+  "04b7463dad12dd9d": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "AI - Score This Lead",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "04fcbb910c9c782e": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the trigger tag is added by nothing in the account. The rule hedges correctly \u2014 it may come from a form or a human \u2014 and reports at 'low' as a confirm-this. Real.",
+   "rule": "GHL018",
+   "severity": "low",
+   "step": "",
+   "title": "No workflow in this account adds 'ai-qualify'",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
   "057ae1a6e3a32e0d": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the trigger tag is added by nothing in the account. The rule hedges correctly \u2014 it may come from a form or a human \u2014 and reports at 'low' as a confirm-this. Real.",
    "rule": "GHL018",
    "severity": "low",
    "step": "",
    "title": "No workflow in this account adds 'job-complete'",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Review Request After Close"
   },
   "0c23ef4a8931d81f": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - wants to book",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "0c612224d8883fca": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: both flagged paths are genuinely four conditions deep. Real.",
+   "rule": "GHL094",
+   "severity": "medium",
+   "step": "Where are they in the journey? > Live lead - AI reads the reply > Route by reply intent > BOOKING - they want a time",
+   "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "0cbe4d88f2facfd5": {
@@ -69,42 +124,92 @@
   },
   "114d5f1c68c6b1c8": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This workflow's two sends fire back to back with no wait between them (booking link by SMS and by email), so there is no window in which a reply could arrive \u2014 and the symptom text described a 'day-2 follow-up' the workflow does not have. Reply Handler is additionally triggered BY a reply. The rule counted outbound steps and never checked for a pause between them. FIXED: GHL003 now requires Workflow.sends_across_a_wait().",
    "rule": "GHL003",
    "severity": "high",
    "step": "",
    "title": "2 outbound messages, nothing listening for a reply",
-   "verdict": null,
+   "verdict": "false_positive",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "125de54ea1b5ab92": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: both custom values still carry REPLACE-WITH-CLIENT placeholder text. Real.",
+   "rule": "GHL008",
+   "severity": "high",
+   "step": "Integration Webhook URL",
+   "title": "Custom value 'Integration Webhook URL' is still a placeholder",
+   "verdict": "real",
+   "workflow": "(custom values)"
   },
   "12d558b93d7decc8": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Sync verdict - COLD",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "1356064b72b94a19": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Backup email",
+   "title": "2 marketing emails with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "Speed to Lead - 5 Minute Response"
+  },
+  "14e26541fe957afa": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - Google Ads",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Lead Source Attribution & Reporting"
   },
   "170623148e46849d": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 4 internal_notification steps and no guard tag in the workflow. Real.",
    "rule": "GHL009",
    "severity": "medium",
    "step": "",
    "title": "4 internal alerts with no guard tag",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "17c9c0df3a25db87": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "Tag as ai-hot",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "1862ac54b7183947": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the suppression If/Else runs once at the top and never again before the second send, which sits days later. Real.",
+   "rule": "GHL010",
+   "severity": "medium",
+   "step": "Nudge with the link",
+   "title": "Suppression tags are checked before the wait, never after",
+   "verdict": "real",
+   "workflow": "Review Request After Close"
   },
   "19fea74c3fdc600d": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - replied",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "1b540f818b4ea434": {
@@ -129,13 +234,33 @@
   },
   "1c656d933f74b9e3": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity for the human to work",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Dead Lead Reactivation"
+  },
+  "1de3118c20403bdc": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - Facebook Ads",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Lead Source Attribution & Reporting"
+  },
+  "1e6bb5e18781e8c4": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the prompt interpolates {{message.body}} inline with its instructions, unfenced. Real, and serious.",
+   "rule": "GHL077",
+   "severity": "high",
+   "step": "AI - Classify This Reply",
+   "title": "The contact's own words are pasted into the prompt as instructions",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "20c13aa933b4f352": {
    "account": "requena-live-aug26",
@@ -147,114 +272,224 @@
    "verdict": "false_positive",
    "workflow": "Strategy Call - Booking & Confirmation v2"
   },
+  "20f564481857f202": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Rebook ask email",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
+  },
+  "21712190ee6862bb": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "A1 - what happened to the quote",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Dead Lead Reactivation"
+  },
   "226a490495af5916": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Move to No-Show stage",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "No Show Recovery"
   },
   "252f40db94f1f987": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - no show",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "No Show Recovery"
   },
   "25b3fdd8e47abc30": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Move to Call Booked",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Strategy Call - Booking & Confirmation v2"
+  },
+  "270d174e99c44948": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 8 workflows each create their own opportunity on one pipeline. Real.",
+   "rule": "GHL039",
+   "severity": "medium",
+   "step": "Dead Lead Reactivation, Lead Source Attribution & Reporting, Missed Call Text Back, No Show Recovery, Reply Handler - Route, Stop Nurture, Alert, Speed to Lead - 5 Minute Response, Strategy Call - Booking & Confirmation v2",
+   "title": "8 workflows each create an opportunity on 'PmmHtBKDEbkIVE892p9A'",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "2804dc89c06ba1da": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Ask for the review",
    "title": "1 marketing email with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Review Request After Close"
   },
-  "3f1579742bd53626": {
-   "account": "requena-live-aug26",
-   "note": "",
+  "2d0008064f90afd7": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: both flagged paths are genuinely four conditions deep. Real.",
+   "rule": "GHL094",
+   "severity": "medium",
+   "step": "Did they rebook? > Not yet > Rebooked by now? > Rebooked",
+   "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+   "verdict": "real",
+   "workflow": "No Show Recovery"
+  },
+  "305b5cfbc3709ebd": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - booked",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Strategy Call - Booking & Confirmation v2"
+  },
+  "30d6c1328e4c3d20": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
-   "step": "Create opportunity",
+   "step": "Advance to Nurture - wants to book",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
-   "workflow": "Missed Call Text Back"
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
-  "3ff07c0f14cf0651": {
-   "account": "requena-live-aug26",
-   "note": "",
+  "30e16e1fedf5a659": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Sync verdict - REVIEW",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "34be51a40d76d580": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Sync verdict - HOT",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "3629ef9383bad4bf": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'Strategy Call - Booking & Confirmation v2' has 6 sends separated by appointment-anchored waits and no reply release of its own. It now reports as the LOW 'reply handling is delegated \u2014 confirm this workflow is in the listener's remove list' variant, which is a fair confirm-this rather than a defect claim. Real at that severity.",
    "rule": "GHL003",
    "severity": "low",
    "step": "",
    "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
-   "verdict": null,
+   "verdict": "real",
+   "workflow": "Strategy Call - Booking & Confirmation v2"
+  },
+  "395ca5e2738abc98": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Advance to Nurture - objection",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "3b21f2ec6dc0d7cf": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Ask 1 - who else needs this",
+   "title": "1 marketing email with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "Referral Request - Two Asks, Then Stop"
+  },
+  "3f1579742bd53626": {
+   "account": "requena-live-aug26",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Create opportunity",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Missed Call Text Back"
+  },
+  "3ff07c0f14cf0651": {
+   "account": "requena-live-aug26",
+   "note": "Verified Sep-02 2026: 'Strategy Call - Booking & Confirmation v2' has 6 sends separated by appointment-anchored waits and no reply release of its own. It now reports as the LOW 'reply handling is delegated \u2014 confirm this workflow is in the listener's remove list' variant, which is a fair confirm-this rather than a defect claim. Real at that severity.",
+   "rule": "GHL003",
+   "severity": "low",
+   "step": "",
+   "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
+   "verdict": "real",
    "workflow": "Strategy Call - Booking & Confirmation v2"
   },
   "40a79033392e45cd": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - Other Tracked Source",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "4348242d2d522ae3": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the trigger tag is added by nothing in the account. The rule hedges correctly \u2014 it may come from a form or a human \u2014 and reports at 'low' as a confirm-this. Real.",
    "rule": "GHL018",
    "severity": "low",
    "step": "",
    "title": "No workflow in this account adds 'job-complete'",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Referral Request - Two Asks, Then Stop"
   },
   "435ecd7aa3d80cf0": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Same-day rebook email",
    "title": "3 marketing emails with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "No Show Recovery"
   },
   "4480c54d8083176e": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create attributed opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "456ec4a588f3ca3f": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This is an appointment-triggered booking workflow: confirmation email plus a pre-call note, both anchored to the same reservation. Google's sender guidance names reservation confirmations as exempt from the one-click unsubscribe requirement, so the advice was wrong AND harmful \u2014 opting out of transactional mail is how someone stops receiving the reminder for the call they booked. The rule exempted transactional workflows only when they held exactly ONE email. FIXED: the allowance is now two, the event rather than the message; a third email is a chase and still fires (No Show Recovery still flagged, correctly).",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Confirmation email",
    "title": "2 marketing emails with no unsubscribe link",
-   "verdict": null,
+   "verdict": "false_positive",
    "workflow": "Strategy Call - Booking & Confirmation v2"
   },
   "47446da89b1e0797": {
@@ -267,55 +502,135 @@
    "verdict": "real",
    "workflow": "Strategy Call Appointment Workflow"
   },
+  "49a479cb76ab116c": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Sync verdict - COLD",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
   "4c39c9e3d8df221e": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "Tag as ai-hot",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "4c81d27b2ef1340d": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the trigger tag is added by nothing in the account. The rule hedges correctly \u2014 it may come from a form or a human \u2014 and reports at 'low' as a confirm-this. Real.",
    "rule": "GHL018",
    "severity": "low",
    "step": "",
    "title": "No workflow in this account adds 'ai-qualify'",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "52cf97c8add7b1cd": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "Live lead - AI reads the reply",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "572ac0873b0a0aa2": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "AI - Classify This Reply",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "61e4b5eb2c718587": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "Tag as ai-warm",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "64550cd093097126": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "A1 - what happened to the quote",
+   "title": "5 marketing emails with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "Dead Lead Reactivation"
   },
   "6764a6eacb124ac6": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'Last touch' sits behind an unbounded reply-wait, which really can resume at any hour, and the workflow carries no send window. Real \u2014 this is the shape the rule exists for, as distinct from the one-minute speed-to-lead hold that was the false positive.",
    "rule": "GHL029",
    "severity": "high",
    "step": "Last touch",
    "title": "1 message can fire at any hour of the night",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Missed Call Text Back"
+  },
+  "6a0e049bcb45a6b3": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - YouTube Ads",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Lead Source Attribution & Reporting"
+  },
+  "6b2b02d356ef08b0": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Open an opportunity",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "6ba02002c359e6ee": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'Second touch with booking link' sits behind an unbounded reply-wait in a workflow with no send window, so it really can resume at any hour. This is the finding that REMAINED after the GHL029 duration fix removed the one-minute speed-to-lead hold from the same workflow \u2014 the rule now separates the two correctly.",
+   "rule": "GHL029",
+   "severity": "high",
+   "step": "Second touch with booking link",
+   "title": "1 message can fire at any hour of the night",
+   "verdict": "real",
+   "workflow": "Speed to Lead - 5 Minute Response"
   },
   "7017916d1b7d5d54": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - question",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "7222e42debc9d558": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - cancelled",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
   },
   "74358dedee1307ca": {
    "account": "requena-live-aug26",
@@ -327,44 +642,114 @@
    "verdict": "real",
    "workflow": "(custom values)"
   },
+  "748f689054eabaec": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the trigger tag is added by nothing in the account. The rule hedges correctly \u2014 it may come from a form or a human \u2014 and reports at 'low' as a confirm-this. Real.",
+   "rule": "GHL018",
+   "severity": "low",
+   "step": "",
+   "title": "No workflow in this account adds 'job-complete'",
+   "verdict": "real",
+   "workflow": "Referral Request - Two Asks, Then Stop"
+  },
   "79d5afd78e193ee5": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - Facebook Ads",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Lead Source Attribution & Reporting"
+  },
+  "7a515154bcc1637b": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the trigger tag is added by nothing in the account. The rule hedges correctly \u2014 it may come from a form or a human \u2014 and reports at 'low' as a confirm-this. Real.",
+   "rule": "GHL018",
+   "severity": "low",
+   "step": "",
+   "title": "No workflow in this account adds 'job-complete'",
+   "verdict": "real",
+   "workflow": "Review Request After Close"
+  },
+  "7bb23429dce7581c": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 10 workflows send email and the account has no bounce/complaint handler. Real.",
+   "rule": "GHL061",
+   "severity": "high",
+   "step": "AI Lead Qualification - Score, Route & Sync, Appointment Cancelled - Clean Up & One Rebook Ask, Dead Lead Reactivation, +7 more",
+   "title": "10 workflows send email and nothing handles a bounce or a complaint",
+   "verdict": "real",
+   "workflow": "(account)"
   },
   "7cbb5c71dd9cd254": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create opportunity",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Speed to Lead - 5 Minute Response"
+  },
+  "7d6fe77e02ff1519": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: both workflows genuinely trigger on tag_added 'job-complete'. The high-severity collision is real; only the 'identical copies' critical was wrong (see the corrected entry).",
+   "rule": "GHL015",
+   "severity": "high",
+   "step": "Review Request After Close",
+   "title": "2 workflows fire on the same 'tag_added' event with equivalent filters",
+   "verdict": "real",
+   "workflow": "Referral Request - Two Asks, Then Stop"
+  },
+  "7f780fc05fc00713": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "Route by AI score",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "8313000bb3ab8a0d": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Send the booking link by email",
+   "title": "1 marketing email with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "85a7475fe20e7c00": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "Tag as ai-warm",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "8785804d575f2e2d": {
+   "account": "account-bundle-2026-09-01",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. 'Instant reply SMS' sits behind a ONE MINUTE hold ('Hold 1 minute for the junk filter'), and the finding claimed it 'goes out at whatever hour the trigger fired... three days later'. A one-minute pause lands in the same minute; the lead who submitted the form at 11:40pm is waiting for that reply. The rule's own docstring said flagging speed-to-lead for answering fast would be noise, and the implementation did exactly that. FIXED: Step.wait_minutes() added; a wait under an hour no longer counts as an hour shift. An unbounded reply-wait still does, so Speed to Lead's later 'Second touch' and Missed Call's 'Last touch' remain flagged.",
+   "rule": "GHL029",
+   "severity": "high",
+   "step": "Instant reply SMS",
+   "title": "2 messages can fire at any hour of the night",
+   "verdict": "false_positive",
+   "workflow": "Speed to Lead - 5 Minute Response"
   },
   "88890f541b940b41": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "Live lead - AI reads the reply",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "8c4501dcdb3bfca3": {
@@ -376,6 +761,26 @@
    "title": "Greeting renders as 'Hey ,' when first_name is empty",
    "verdict": "real",
    "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
+  },
+  "8ee5521ac0f44f48": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the prompt interpolates {{message.body}} inline with its instructions, unfenced. Real, and serious.",
+   "rule": "GHL077",
+   "severity": "high",
+   "step": "AI - Score This Lead",
+   "title": "The contact's own words are pasted into the prompt as instructions",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "8f6c682ff7b2143f": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Sync verdict - WARM",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "8fb1b0bb33ceeaa8": {
    "account": "requena-live-aug26",
@@ -397,25 +802,55 @@
    "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
+  "940b8a99813408f7": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Create Opportunity in Coaching Sales Pipeline",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Strategy Call Appointment Workflow"
+  },
   "94d1f8b152b56a9f": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Sync verdict - REVIEW",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "967585ce2c8efe63": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Create opportunity",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Speed to Lead - 5 Minute Response"
   },
   "968d1e26e5d02088": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the suppression If/Else runs once at the top and never again before the second send, which sits days later. Real.",
    "rule": "GHL010",
    "severity": "medium",
    "step": "Ask 2 - one line nudge",
    "title": "Suppression tags are checked before the wait, never after",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Referral Request - Two Asks, Then Stop"
+  },
+  "97f5505f77dcb5a9": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Same-day rebook email",
+   "title": "3 marketing emails with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "No Show Recovery"
   },
   "983ca4c9e30b2754": {
    "account": "requena-live-aug26",
@@ -427,34 +862,114 @@
    "verdict": "real",
    "workflow": "Review Request After Close"
   },
+  "9993dade12646912": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Backup email",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Speed to Lead - 5 Minute Response"
+  },
   "9c7680f0348e2f71": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Backup email",
    "title": "2 marketing emails with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Speed to Lead - 5 Minute Response"
+  },
+  "9cd2c617fbd1fb43": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'Strategy Call - Booking & Confirmation v2' removes contacts from Speed to Lead, Dead Lead Reactivation and No Show Recovery \u2014 NOT from Missed Call Text Back. It only clears the missed-call-no-response TAG. Real.",
+   "rule": "GHL096",
+   "severity": "high",
+   "step": "",
+   "title": "'Strategy Call - Booking & Confirmation v2' pulls contacts out of the other cadences on a conversion \u2014 and not out of this one",
+   "verdict": "real",
+   "workflow": "Missed Call Text Back"
+  },
+  "9dd5fd04197a26a0": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+   "rule": "GHL049",
+   "severity": "high",
+   "step": "AI - Classify This Reply",
+   "title": "A branch routes on AI output that nothing constrains",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "9e2ead6d42f2042c": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Move to No-Show stage",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "No Show Recovery"
   },
   "9f346fdf232a7524": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "Tag as ai-cold",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "a2574a83ef2bb6b6": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: both custom values still carry REPLACE-WITH-CLIENT placeholder text. Real.",
+   "rule": "GHL008",
+   "severity": "high",
+   "step": "Review Link",
+   "title": "Custom value 'Review Link' is still a placeholder",
+   "verdict": "real",
+   "workflow": "(custom values)"
+  },
+  "a430aa17b21f15f3": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Confirmation email",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Strategy Call - Booking & Confirmation v2"
+  },
+  "a806e90a69f1c698": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Ask 1 - who else needs this",
+   "title": "Greeting renders as 'Hi ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Referral Request - Two Asks, Then Stop"
+  },
+  "a82bc50f35495c33": {
+   "account": "account-bundle-2026-09-01",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This is an appointment-triggered booking workflow: confirmation email plus a pre-call note, both anchored to the same reservation. Google's sender guidance names reservation confirmations as exempt from the one-click unsubscribe requirement, so the advice was wrong AND harmful \u2014 opting out of transactional mail is how someone stops receiving the reminder for the call they booked. The rule exempted transactional workflows only when they held exactly ONE email. FIXED: the allowance is now two, the event rather than the message; a third email is a chase and still fires (No Show Recovery still flagged, correctly).",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Confirmation email",
+   "title": "2 marketing emails with no unsubscribe link",
+   "verdict": "false_positive",
+   "workflow": "Strategy Call - Booking & Confirmation v2"
   },
   "ab01e6f7ccd70f23": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - cancelled",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
   },
   "ae17d7c0b1171fc2": {
@@ -467,34 +982,44 @@
    "verdict": "real",
    "workflow": "Missed Call Text Back"
   },
+  "b120b0032fb2a2cb": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Create opportunity for the human to work",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Dead Lead Reactivation"
+  },
   "b3046e14b31327a2": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - Google Ads",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "b48410e89b9c835c": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Sync verdict - HOT",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "b48d4b379654a092": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Advance to Nurture - objection",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "b49a200d4dd01ae2": {
@@ -509,23 +1034,33 @@
   },
   "b536ef9f57637ae7": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "AI - Score This Lead",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "b5db6e4650b6778e": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Send the booking link by email",
    "title": "1 marketing email with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "b86a47bc10da23c8": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Create opportunity",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Missed Call Text Back"
   },
   "bb7507b41ca86c34": {
    "account": "requena-live-aug26",
@@ -547,55 +1082,175 @@
    "verdict": "real",
    "workflow": "(custom values)"
   },
+  "be79829b399c1cd7": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Same-day rebook email",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "No Show Recovery"
+  },
+  "c49c32aed2b7a972": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: status is 'draft' with 9 steps including 5 sends. Real.",
+   "rule": "GHL037",
+   "severity": "medium",
+   "step": "",
+   "title": "Complete workflow, configured trigger \u2014 never published",
+   "verdict": "real",
+   "workflow": "Strategy Call Appointment Workflow"
+  },
+  "c4df2fe9dc32e255": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Advance to Nurture - question",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
+  "c830bce7faf7fdaf": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
+   "rule": "GHL016",
+   "severity": "medium",
+   "step": "Ask for the review",
+   "title": "Greeting renders as 'Hey ,' when first_name is empty",
+   "verdict": "real",
+   "workflow": "Review Request After Close"
+  },
+  "c8bf0a09cf527d64": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Move to Call Booked",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Strategy Call - Booking & Confirmation v2"
+  },
   "c8d95f98099f45a2": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This workflow's two sends fire back to back with no wait between them (booking link by SMS and by email), so there is no window in which a reply could arrive \u2014 and the symptom text described a 'day-2 follow-up' the workflow does not have. Reply Handler is additionally triggered BY a reply. The rule counted outbound steps and never checked for a pause between them. FIXED: GHL003 now requires Workflow.sends_across_a_wait().",
    "rule": "GHL003",
    "severity": "low",
    "step": "",
    "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
-   "verdict": null,
+   "verdict": "false_positive",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "c951b29ab3fad535": {
+   "account": "account-bundle-2026-09-01",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This workflow's two sends fire back to back with no wait between them (booking link by SMS and by email), so there is no window in which a reply could arrive \u2014 and the symptom text described a 'day-2 follow-up' the workflow does not have. Reply Handler is additionally triggered BY a reply. The rule counted outbound steps and never checked for a pause between them. FIXED: GHL003 now requires Workflow.sends_across_a_wait().",
+   "rule": "GHL003",
+   "severity": "low",
+   "step": "",
+   "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
+   "verdict": "false_positive",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "ca12eaf203fa7802": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. 'Instant reply SMS' sits behind a ONE MINUTE hold ('Hold 1 minute for the junk filter'), and the finding claimed it 'goes out at whatever hour the trigger fired... three days later'. A one-minute pause lands in the same minute; the lead who submitted the form at 11:40pm is waiting for that reply. The rule's own docstring said flagging speed-to-lead for answering fast would be noise, and the implementation did exactly that. FIXED: Step.wait_minutes() added; a wait under an hour no longer counts as an hour shift. An unbounded reply-wait still does, so Speed to Lead's later 'Second touch' and Missed Call's 'Last touch' remain flagged.",
    "rule": "GHL029",
    "severity": "high",
    "step": "Instant reply SMS",
    "title": "2 messages can fire at any hour of the night",
-   "verdict": null,
+   "verdict": "false_positive",
    "workflow": "Speed to Lead - 5 Minute Response"
   },
   "ca5affe2b5ab8ce0": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the suppression If/Else runs once at the top and never again before the second send, which sits days later. Real.",
    "rule": "GHL010",
    "severity": "medium",
    "step": "Nudge with the link",
    "title": "Suppression tags are checked before the wait, never after",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Review Request After Close"
   },
-  "dca2c3d39f742991": {
-   "account": "requena-live-aug26",
-   "note": "",
+  "cb86888cb21e7b9c": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
+   "rule": "GHL007",
+   "severity": "low",
+   "step": "Create attributed opportunity",
+   "title": "'create_opportunity' is deprecated",
+   "verdict": "real",
+   "workflow": "Lead Source Attribution & Reporting"
+  },
+  "cf33247ae3edee73": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - Other Tracked Source",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Lead Source Attribution & Reporting"
+  },
+  "d5c1fc50875b8ee4": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Follow up by email",
    "title": "1 marketing email with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
+   "workflow": "Missed Call Text Back"
+  },
+  "d6443063da1d74cd": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the suppression If/Else runs once at the top and never again before the second send, which sits days later. Real.",
+   "rule": "GHL010",
+   "severity": "medium",
+   "step": "Ask 2 - one line nudge",
+   "title": "Suppression tags are checked before the wait, never after",
+   "verdict": "real",
+   "workflow": "Referral Request - Two Asks, Then Stop"
+  },
+  "d8755a85e0e38c97": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 'Last touch' sits behind an unbounded reply-wait, which really can resume at any hour, and the workflow carries no send window. Real \u2014 this is the shape the rule exists for, as distinct from the one-minute speed-to-lead hold that was the false positive.",
+   "rule": "GHL029",
+   "severity": "high",
+   "step": "Last touch",
+   "title": "1 message can fire at any hour of the night",
+   "verdict": "real",
+   "workflow": "Missed Call Text Back"
+  },
+  "dca2c3d39f742991": {
+   "account": "requena-live-aug26",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Follow up by email",
+   "title": "1 marketing email with no unsubscribe link",
+   "verdict": "real",
    "workflow": "Missed Call Text Back"
   },
   "dcd491f3c9632e0d": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Sync verdict - WARM",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
+  "dd45828e70bcf0ae": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Ask for the review",
+   "title": "1 marketing email with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "Review Request After Close"
   },
   "de8bfc7a0b0b1be0": {
    "account": "requena-live-aug26",
@@ -607,15 +1262,45 @@
    "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
+  "e3cd5587c67e1881": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+   "rule": "GHL025",
+   "severity": "medium",
+   "step": "Booking nudge email",
+   "title": "1 marketing email with no unsubscribe link",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
+  },
   "e5d4d94cbf3be3f3": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "A1 - what happened to the quote",
    "title": "5 marketing emails with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Dead Lead Reactivation"
+  },
+  "e630ed17ecc2521d": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - no show",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "No Show Recovery"
+  },
+  "e6b81589f4ca1193": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - replied",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
   },
   "e87e089f4ee77b20": {
    "account": "requena-live-aug26",
@@ -637,6 +1322,16 @@
    "verdict": "real",
    "workflow": "(account)"
   },
+  "ec668bce74570207": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+   "rule": "GHL041",
+   "severity": "high",
+   "step": "Push to integrations - Direct / Unknown",
+   "title": "External call with no error branch \u2014 a failure is silently skipped",
+   "verdict": "real",
+   "workflow": "Lead Source Attribution & Reporting"
+  },
   "f0a39df155a77227": {
    "account": "requena-live-aug26",
    "note": "Greeting merges first_name with no fallback; renders 'Hey ,' on a blank.",
@@ -657,84 +1352,114 @@
    "verdict": "false_positive",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
+  "f45b7bf074ffbc6d": {
+   "account": "account-bundle-2026-09-01",
+   "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This workflow's two sends fire back to back with no wait between them (booking link by SMS and by email), so there is no window in which a reply could arrive \u2014 and the symptom text described a 'day-2 follow-up' the workflow does not have. Reply Handler is additionally triggered BY a reply. The rule counted outbound steps and never checked for a pause between them. FIXED: GHL003 now requires Workflow.sends_across_a_wait().",
+   "rule": "GHL003",
+   "severity": "high",
+   "step": "",
+   "title": "2 outbound messages, nothing listening for a reply",
+   "verdict": "false_positive",
+   "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+  },
   "f4d83d1f46688246": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: the export contains exactly 21 create_opportunity steps, so the detection is correct. NOTE: that the action is deprecated is the rule's own claim and has NOT been checked against GoHighLevel's current documentation \u2014 worth confirming before it goes in front of a paying client.",
    "rule": "GHL007",
    "severity": "low",
    "step": "Create Opportunity in Coaching Sales Pipeline",
    "title": "'create_opportunity' is deprecated",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Strategy Call Appointment Workflow"
+  },
+  "f67dc9ec5924fb63": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: the flagged messages merge an appointment time and never name a zone. Real.",
+   "rule": "GHL068",
+   "severity": "medium",
+   "step": "Confirmation SMS, Confirmation email, Pre-call email, 24h reminder SMS",
+   "title": "4 messages quote an appointment time with no timezone",
+   "verdict": "real",
+   "workflow": "Strategy Call - Booking & Confirmation v2"
   },
   "f823fe10d3350d83": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
    "rule": "GHL049",
    "severity": "high",
    "step": "Route by AI score",
    "title": "A branch routes on AI output that nothing constrains",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "f86188e1088ac434": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Ask 1 - who else needs this",
    "title": "1 marketing email with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Referral Request - Two Asks, Then Stop"
+  },
+  "fa379fd422b087c8": {
+   "account": "account-bundle-2026-09-01",
+   "note": "Verified Sep-02 2026: 4 internal_notification steps and no guard tag in the workflow. Real.",
+   "rule": "GHL009",
+   "severity": "medium",
+   "step": "",
+   "title": "4 internal alerts with no guard tag",
+   "verdict": "real",
+   "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "fb1c326ec38497eb": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
    "rule": "GHL025",
    "severity": "medium",
    "step": "Booking nudge email",
    "title": "1 marketing email with no unsubscribe link",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "fbee8d2aea30b7f1": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - YouTube Ads",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "ff8b1f5739b807d6": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 8 workflows each create their own opportunity on one pipeline. Real.",
    "rule": "GHL039",
    "severity": "medium",
    "step": "Dead Lead Reactivation, Lead Source Attribution & Reporting, Missed Call Text Back, No Show Recovery, Reply Handler - Route, Stop Nurture, Alert, Speed to Lead - 5 Minute Response, Strategy Call - Booking & Confirmation v2",
    "title": "8 workflows each create an opportunity on 'Coaching Sales Pipeline'",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "AI Lead Qualification - Score, Route & Sync"
   },
   "ffc3f0c6fb12eabe": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - Direct / Unknown",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Lead Source Attribution & Reporting"
   },
   "ffeece673c50f21a": {
    "account": "requena-live-aug26",
-   "note": "",
+   "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
    "rule": "GHL041",
    "severity": "high",
    "step": "Push to integrations - booked",
    "title": "External call with no error branch \u2014 a failure is silently skipped",
-   "verdict": null,
+   "verdict": "real",
    "workflow": "Strategy Call - Booking & Confirmation v2"
   }
  }

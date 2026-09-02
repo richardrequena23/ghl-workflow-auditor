@@ -203,6 +203,11 @@ def sender_with_no_listener(acct: Account):
     for wf in acct.published():
         if len(wf.outbound) < 2 or wf.has_reply_release():
             continue
+        # Two sends with no pause between them cannot ignore a reply — there is
+        # no window for one to arrive in. An SMS and the same message by email,
+        # fired together, is one touch delivered twice.
+        if not wf.sends_across_a_wait():
+            continue
         if handler is not None and handler.id != wf.id:
             # The account has a central listener, so this is a design choice rather
             # than a defect. Still worth surfacing: the listener has to actually name
@@ -1371,10 +1376,24 @@ def email_deliverability(acct: Account):
             continue
         # A receipt or a booking confirmation is transactional and does not need
         # one; a sequence is marketing whatever it is called.
+        #
+        # The line sits at two emails, not one. Google's sender guidance names
+        # reservation confirmations as exempt, and a booking workflow that
+        # sends the confirmation and then a pre-call note is still that one
+        # reservation — the second message is anchored to the same event, not a
+        # second attempt at the person. This account had exactly that shape
+        # ("Strategy Call - Booking & Confirmation v2": confirmation + pre-call)
+        # and the rule told its owner to put an unsubscribe link on an
+        # appointment confirmation, which is both wrong and harmful: opting out
+        # of transactional mail is how someone stops receiving their reminder.
+        #
+        # A third email is where it stops being one transaction. By then the
+        # workflow is chasing — "Same-day rebook / Second touch / Close-out" is
+        # a campaign whatever triggered it, and that one still gets flagged.
         transactional = any(
             any(k in t.canonical_type() for k in
                 ("appointment", "order", "payment", "invoice", "form_submitted"))
-            for t in wf.triggers) and len(emails) == 1
+            for t in wf.triggers) and len(emails) <= 2
         if transactional:
             continue
         blob = wf.bodies() or wf.text()
@@ -1709,7 +1728,17 @@ def delayed_sends_without_a_window(acct: Account):
             if s.is_wait:
                 # A wait carrying its own send window resumes inside that
                 # window, so the send right after it is timed, not stray.
-                waited = not _step_window(s)
+                #
+                # A short hold does not move a send into a different hour
+                # either. This rule's whole premise is that "wait 3 days" lands
+                # at whatever o'clock the trigger fired — a one-minute pause to
+                # let a form finish writing lands in the same minute, and the
+                # lead who submitted at 11:40pm is expecting that reply. The
+                # docstring above already said flagging speed-to-lead would be
+                # noise; without this it did exactly that.
+                minutes = s.wait_minutes()
+                brief = minutes is not None and minutes < 60
+                waited = not _step_window(s) and not brief
             elif waited and (s.is_sms or s.type in ("call", "manual_call",
                                                     "voicemail")):
                 delayed.append(s)

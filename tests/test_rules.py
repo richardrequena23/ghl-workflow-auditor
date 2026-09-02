@@ -793,12 +793,76 @@ class EmailDeliverabilityRules(unittest.TestCase):
                               "value": "confirmed"}]}]
         self.assertNotIn("GHL025", rules_hit([wf("Confirmation", steps, trig)]))
 
+    def test_a_confirmation_plus_its_pre_call_note_is_still_transactional(self):
+        """Two messages about one booking are one transaction.
+
+        Google's sender guidance names reservation confirmations as exempt from
+        the one-click unsubscribe requirement. The rule used to exempt a
+        transactional workflow only when it held exactly one email, so a real
+        account's "Strategy Call - Booking & Confirmation v2" — confirmation
+        plus a pre-call note — was told to add an unsubscribe link to an
+        appointment confirmation. That is wrong advice and harmful advice:
+        opting out of transactional mail is how someone stops receiving the
+        reminder for the call they booked.
+        """
+        steps = [email("Confirmed", "You're booked for Tuesday."), wait(),
+                 email("Before we talk", "Here's what to have ready.")]
+        trig = [{"type": "customer_booked_appointment",
+                 "filters": [{"field": "appointment_status",
+                              "value": "confirmed"}]}]
+        self.assertNotIn("GHL025",
+                         rules_hit([wf("Booking & Confirmation", steps, trig)]))
+
+    def test_a_third_email_makes_it_a_campaign_again(self):
+        """A chase is marketing whatever triggered it.
+
+        "Same-day rebook / Second touch / Close-out" off an appointment trigger
+        is a sequence aimed at a person who did not respond, not a receipt.
+        """
+        steps = [email("Same day", "Want to grab another time?"), wait(),
+                 email("Second touch", "Still keen?"), wait(),
+                 email("Close out", "Last one from me.")]
+        trig = [{"type": "customer_booked_appointment",
+                 "filters": [{"field": "appointment_status",
+                              "value": "noshow"}]}]
+        self.assertIn("GHL025", rules_hit([wf("No Show Recovery", steps, trig)]))
+
     def test_config_can_mark_a_workflow_transactional(self):
         steps = [email("Receipt", "Your receipt"), wait(),
                  email("Receipt copy", "Copy of your receipt")]
         cfg = AuditConfig.from_dict({"transactional_workflows": ["Receipts"]})
         self.assertNotIn("GHL025", rules_hit([wf("Receipts", steps)],
                                              config=cfg))
+
+    def test_a_one_minute_hold_is_not_an_hour_shift(self):
+        """Speed-to-lead answering fast is not a 3am text.
+
+        This rule exists because "wait 3 days" lands at whatever o'clock the
+        trigger fired. A one-minute pause to let a form finish writing lands in
+        the same minute, and the lead who submitted at 11:40pm is waiting for
+        that reply. The rule's own docstring said flagging speed-to-lead would
+        be noise; it did exactly that until the wait's duration was read.
+        """
+        steps = [{"type": "wait", "name": "Hold 1 minute",
+                  "meta": {"startAfter": {"type": "minutes", "value": 1}}},
+                 sms("Instant reply", "Got your enquiry - what time suits?")]
+        self.assertNotIn("GHL029", rules_hit([wf("Speed to Lead", steps,
+                         [{"type": "form_submitted"}])]))
+
+    def test_a_multi_day_wait_still_needs_a_window(self):
+        steps = [{"type": "wait", "name": "Wait 3 days",
+                  "meta": {"startAfter": {"type": "days", "value": 3}}},
+                 sms("Follow up", "Still thinking it over?")]
+        self.assertIn("GHL029", rules_hit([wf("Nurture", steps,
+                      [{"type": "form_submitted"}])]))
+
+    def test_an_unbounded_wait_is_treated_as_long(self):
+        """A reply-wait with no duration can hold for days. Assume it does."""
+        steps = [{"type": "wait", "name": "Wait for a reply",
+                  "meta": {"type": "reply"}},
+                 sms("Last touch", "Closing your file.")]
+        self.assertIn("GHL029", rules_hit([wf("Missed Call", steps,
+                      [{"type": "form_submitted"}])]))
 
     def test_unverified_sending_domain(self):
         steps = [email("Tip", "Here is a tip. {{unsubscribe}}")]
@@ -1637,6 +1701,25 @@ class Scoring(unittest.TestCase):
         for tag in ("HOT", "WARM", "COLD"):
             self.assertIn(f"Sync verdict - {tag}", html)
         self.assertNotIn("3 workflows", html)
+
+    def test_two_sends_with_no_pause_between_them_is_not_a_drip(self):
+        """No wait, no window for a reply to land in, nothing to ignore.
+
+        A real reply-triggered workflow sent the booking link by SMS and by
+        email, back to back, and was flagged for "2 outbound messages, nothing
+        listening for a reply" — with a symptom describing a day-2 follow-up it
+        did not have. One touch delivered twice is not a sequence.
+        """
+        steps = [sms("Link", "Here's my calendar."),
+                 email("Link", "Here's my calendar.")]
+        self.assertNotIn("GHL003", rules_hit([wf("Reply Handler", steps,
+                         [{"type": "customer_replied"}])]))
+
+    def test_a_send_after_a_wait_is_still_a_drip(self):
+        steps = [sms("Touch 1", "You free this week?"), wait(),
+                 sms("Touch 2", "Last one from me.")]
+        self.assertIn("GHL003", rules_hit([wf("Nurture", steps,
+                      [{"type": "contact_created"}])]))
 
     def test_reach_widens_the_blast_radius(self):
         from ghlaudit.rules import Finding

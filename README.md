@@ -352,7 +352,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,027 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,034 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
@@ -362,6 +362,37 @@ configuration it would wrongly flag, and to feed it malformed exports — `steps
 a trigger that is a bare string, a settings value that is a list — because a traceback
 mid-audit stops the other 99 checks. What that pass found got fixed and became a
 regression test; that is most of why the suite is the size it is.
+
+### The measured rate
+
+A suite proves each rule fires on a fixture built to trip it. The same person wrote the
+rule and the fixture, so that is a weak guarantee — it says nothing about how often a
+rule misfires on a real export, which is the only number a client cares about.
+
+So the catalog is run against a real 13-workflow account and **every finding is judged by
+hand, one at a time, against the raw export**. The ledger is
+[`calibration/verdicts.json`](calibration/verdicts.json): each finding keyed by content,
+marked `real` or `false_positive`, with a note saying why. `scripts/precision_report.py
+--summary` re-derives the number from it.
+
+**145 findings judged, 12 false positives — 8.3%.** Nothing is unjudged; an unjudged
+finding is never counted as a pass, for the same reason the auditor reports a skipped
+check instead of silently omitting it.
+
+Every one of those 12 has been narrowed, and a re-run of the same account now produces
+**zero known false positives**. The four that mattered most, because each put wrong advice
+in front of an account owner:
+
+| Rule | What it wrongly claimed | Why it was wrong |
+|---|---|---|
+| GHL015 | two live campaigns were "identical copies" — *unpublish one* | compared structure and never read the copy; a shared skeleton is good practice |
+| GHL003 | a workflow ignored replies through a "day-2 follow-up" | its two sends fired back to back; there was no wait for a reply to land in |
+| GHL025 | an appointment confirmation needed an unsubscribe link | Google's sender guidance exempts reservation confirmations |
+| GHL029 | an instant reply "goes out three days later, at any hour" | the wait was **one minute**, and the rule never read its duration |
+
+One account is a start and not a calibration set. The rate above is honest about what it
+covers: 145 findings on one real export, judged by one person. It is not a population
+statistic and no copy may present it as one.
 
 **[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 100 checks with the
 symptom, the fix and what each one costs. It is generated from a real run against the
