@@ -969,6 +969,57 @@ class DuplicateWorkflowRules(unittest.TestCase):
         self.assertEqual(found[0].severity, "critical")
         self.assertIn("identical copies", found[0].title)
 
+    def test_the_same_skeleton_with_different_words_is_not_a_clone(self):
+        """The false positive this rule shipped with, locked out.
+
+        A real account had a referral ask and a review ask: same trigger, same
+        twenty steps in the same order, completely different copy. The rule saw
+        one shape, called them "2 identical copies of the same workflow", and
+        told the owner to unpublish one of two live campaigns. Reusing a
+        skeleton is good practice, and a critical whose fix is "delete a
+        campaign" has to be certain before it says so.
+        """
+        skeleton = lambda one, two: [sms("Ask 1", one), wait(), sms("Ask 2", two)]
+        referral = wf("Referral Request",
+                      skeleton("Anyone you know who needs the same work done?",
+                               "No pressure - just checking if a name came to mind."),
+                      [{"type": "contact_tag_added",
+                        "filters": [{"tag": "job-complete"}]}])
+        review = wf("Review Request",
+                    skeleton("If it's what you needed, a review helps a lot.",
+                             "No rush - here's the link if you've got a minute."),
+                    [{"type": "contact_tag_added",
+                      "filters": [{"tag": "job-complete"}]}])
+        found = findings_for("GHL015", [referral, review])
+        self.assertEqual(len(found), 1)
+        # Still reported: they DO both enroll on the same tag, and a contact
+        # tagged job-complete really does get both sequences at once. What must
+        # not happen is the critical that says one of them is a duplicate.
+        self.assertEqual(found[0].severity, "high")
+        self.assertNotIn("identical copies", found[0].title)
+
+    def test_a_snapshot_re_push_is_still_caught(self):
+        """The case the rule exists for. Copy is copied too, so it still fires."""
+        steps = [sms("Welcome", "Hi there, thanks for reaching out."),
+                 wait(), sms("Nudge", "Just checking you saw my message.")]
+        a = wf("Welcome", steps, [{"type": "contact_created"}])
+        b = wf("Welcome (copy)", list(steps), [{"type": "contact_created"}])
+        found = findings_for("GHL015", [a, b])
+        self.assertEqual(found[0].severity, "critical")
+        self.assertIn("identical copies", found[0].title)
+
+    def test_the_same_message_in_html_and_plain_text_still_matches(self):
+        """Encoding is not authorship. Two copies of one workflow are one."""
+        from ghlaudit.model import parse_workflow
+        plain = {"type": "email", "name": "Ask",
+                 "meta": {"subject": "Hi", "body": "Thanks for your time."}}
+        marked = {"type": "email", "name": "Ask",
+                  "meta": {"subject": "Hi",
+                           "body": "<p>Thanks   for your time.</p>"}}
+        a = parse_workflow(wf("A", [plain], [{"type": "contact_created"}]))
+        b = parse_workflow(wf("B", [marked], [{"type": "contact_created"}]))
+        self.assertEqual(a.copy_fingerprint(), b.copy_fingerprint())
+
     def test_different_shapes_on_one_trigger_stay_high(self):
         a = wf("Welcome Text", [sms()], [{"type": "contact_created"}])
         b = wf("Welcome Email", [email()], [{"type": "contact_created"}])

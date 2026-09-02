@@ -106,6 +106,38 @@ def _norm_key(key) -> str:
     return re.sub(r"[^a-z]", "", str(key).lower())
 
 
+_MARKUP = re.compile(r"<[^>]+>")
+
+
+def _message_copy(step) -> str:
+    """The words a recipient would read, normalised for comparison.
+
+    Subject plus body, markup removed, whitespace collapsed, lower-cased. The
+    same message written as HTML and as plain text has to compare equal, and a
+    genuinely different message has to not.
+    """
+    raw = step.raw if isinstance(step.raw, dict) else {}
+    # Exports nest the message under different keys depending on where they
+    # came from: `attributes` in a workflow export, `meta` in a snapshot, and
+    # occasionally flat on the step. Look in all three, nearest first.
+    sources = [raw.get(k) for k in ("attributes", "meta", "data")]
+    sources = [d for d in sources if isinstance(d, dict)] + [raw]
+    parts = []
+    for key in ("subject", "body", "message", "html", "text"):
+        val = next((d[key] for d in sources
+                    if isinstance(d.get(key), str) and d[key].strip()), None)
+        if val:
+            parts.append(val)
+            # body and html are the same message in two encodings; one is
+            # enough, and taking both would let a plain-text-only workflow
+            # differ from its own HTML twin.
+            if key in ("body", "message"):
+                break
+    joined = " ".join(parts)
+    joined = _MARKUP.sub(" ", joined)
+    return re.sub(r"\s+", " ", joined).strip().lower()
+
+
 def _tag_strings(value) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -653,12 +685,27 @@ class Workflow:
     def shape(self) -> tuple:
         """A structural fingerprint: what this workflow does, ignoring names.
 
-        Two workflows with the same trigger set and the same ordered action
-        types are the same workflow twice — which is what a snapshot re-pushed
-        onto a non-blank sub-account leaves behind.
+        Structure ALONE does not identify a duplicate. Reusing a skeleton is
+        good practice — a referral ask and a review ask are the same twenty
+        steps in the same order and are not the same workflow — so callers that
+        care about duplication must compare `copy_fingerprint()` too. See
+        GHL015, which used to escalate on this alone and told the owner of a
+        working account to unpublish a live campaign.
         """
         return (tuple(sorted(self.trigger_signatures())),
                 tuple(_norm_key(s.type) for s in self.steps))
+
+    def copy_fingerprint(self) -> tuple:
+        """What this workflow actually SAYS, normalised.
+
+        Only the message content of the outbound steps: subject line and body,
+        stripped of markup, case and whitespace. Deliberately not `Step.text()`
+        — that flattens every string in the export including step ids, which
+        differ between two copies of the same workflow and would make a real
+        duplicate look unique. This has to be the other way round: identical
+        for a snapshot re-push, different the moment a human rewrote the copy.
+        """
+        return tuple(_message_copy(s) for s in self.outbound)
 
     def exits(self) -> list[Step]:
         """Steps that pull the contact out of this workflow before the end."""

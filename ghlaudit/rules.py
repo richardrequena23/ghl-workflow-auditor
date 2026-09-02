@@ -724,11 +724,20 @@ def duplicate_enrollment(acct: Account):
             continue
         seen.add(key)
 
-        # Same trigger AND the same ordered action types is not a collision, it
-        # is the same workflow existing twice — what a snapshot re-pushed onto a
-        # non-blank sub-account leaves behind. Everything double-sends, exactly.
+        # Same trigger, same ordered action types AND the same message copy is
+        # not a collision, it is the same workflow existing twice — what a
+        # snapshot re-pushed onto a non-blank sub-account leaves behind.
+        #
+        # The copy check is not optional. Structure alone flagged a real
+        # account's referral ask and its review ask as "2 identical copies" and
+        # told the owner to unpublish one: same trigger, same twenty steps, and
+        # completely different words. Reusing a skeleton is good practice, and
+        # a critical whose fix is "delete a live campaign" has to be certain.
+        # A snapshot re-push copies the copy too, so requiring it costs the
+        # rule nothing on the case it exists to catch.
         shapes = {by_name[n].shape() for n in names}
-        cloned = len(shapes) == 1 and len(names) > 1
+        copies = {by_name[n].copy_fingerprint() for n in names}
+        cloned = len(shapes) == 1 and len(copies) == 1 and len(names) > 1
         reach = max(len(by_name[n].outbound) for n in names)
 
         if cloned:
