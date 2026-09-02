@@ -2299,6 +2299,38 @@ class AiEnumRules(unittest.TestCase):
                  sms("A human-written follow-up")]
         self.assertNotIn("GHL049", rules_hit([wf("AI Notes", steps)]))
 
+    def test_a_branch_named_after_the_ai_is_not_itself_an_ai_step(self):
+        """Builders name steps after what they route on.
+
+        "Route by AI score" is an If/Else reading a field; it calls no model.
+        Reading it as one reported five findings on a real account for steps
+        that cannot possibly be unconstrained, because they generate nothing.
+        """
+        steps = [{"type": "if_else", "name": "Route by AI score",
+                  "meta": {"conditions": [{"field": "contact.ai_score"}]}},
+                 {"type": "if_else", "name": "Second branch",
+                  "meta": {"conditions": [{"field": "contact.x"}]}}]
+        self.assertNotIn("GHL049", rules_hit([wf("Router", steps)]))
+
+    def test_a_tag_step_named_after_the_ai_is_not_an_ai_step(self):
+        steps = [{"type": "add_contact_tag", "name": "Tag as ai-hot",
+                  "meta": {"tags": ["ai-hot"]}},
+                 {"type": "if_else", "name": "Route on tag",
+                  "meta": {"conditions": [{"field": "contact.tags"}]}}]
+        self.assertNotIn("GHL049", rules_hit([wf("Tagger", steps)]))
+
+    def test_a_name_match_still_counts_when_the_step_carries_a_prompt(self):
+        """The name fallback exists for a real case and must survive the fix.
+
+        A webhook posting to a model is a genuine AI step whose type says
+        nothing; the prompt is what corroborates the name.
+        """
+        steps = [{"type": "webhook", "name": "AI - score this lead",
+                  "meta": {"prompt": "How ready is this lead to buy?"}},
+                 {"type": "if_else", "name": "Route on score",
+                  "meta": {"conditions": [{"field": "contact.score"}]}}]
+        self.assertIn("GHL049", rules_hit([wf("Hidden AI", steps)]))
+
     def test_unconstrained_ai_step_with_nested_parameters_is_flagged(self):
         # n8n-shaped AI node: settings live under `parameters`, not `meta`.
         steps = [{"type": "n8n-nodes-base.openAi", "name": "Classify",

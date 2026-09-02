@@ -3086,6 +3086,64 @@ def scheduled_without_heartbeat(acct: Account):
 AI_STEP_TYPE = re.compile(
     r"\bai\b|(^|[_-])ai($|[_-])|chatgpt|openai|\bgpt\b|gpt[_-]|claude|"
     r"\bllm\b|anthropic", re.I)
+
+# The keys a step carries when it really does call a model. A name is only ever
+# a hint; one of these is the corroboration.
+MODEL_CALL_KEYS = {"prompt", "prompts", "systemprompt", "systemmessage",
+                   "userprompt", "usermessage", "prompttemplate",
+                   "instruction", "instructions", "messages", "model",
+                   "temperature", "maxtokens", "agent", "agentid", "botid"}
+
+
+def _keys_under(node) -> list:
+    """Every key name in the structure, at any depth."""
+    out: list = []
+
+    def walk(n):
+        if isinstance(n, dict):
+            for k, v in n.items():
+                out.append(str(k))
+                walk(v)
+        elif isinstance(n, list):
+            for v in n:
+                walk(v)
+
+    walk(node)
+    return out
+
+
+def _is_send(step: Step) -> bool:
+    """Does this step put a message in front of the contact?
+
+    `Step.is_outbound` is the model's list of send types and it does not carry
+    `mms` or `send_email`, both of which appear in real exports.
+    """
+    return step.is_outbound or step.is_sms or step.is_email
+
+
+def _is_ai_step(step: Step) -> bool:
+    """A step that calls a model.
+
+    A matching TYPE is proof — `chatgpt`, `conversation_ai`, `ai_extract` are
+    action types, not prose. A matching NAME is only a hint and has to be backed
+    by the step carrying a prompt or a model setting, because builders name
+    ordinary steps after the thing they route on: "Route by AI score" is an
+    If/Else, "Tag as ai-hot" is a tag step, and reading either as a model call
+    reports a workflow as having AI steps it does not have.
+
+    A send is never one, however it is named. "Send the AI draft" is an SMS step
+    that consumes model output; reading it as the producer would let the send
+    satisfy its own guard.
+    """
+    if _is_send(step):
+        return False
+    if AI_STEP_TYPE.search(step.type):
+        return True
+    if not AI_STEP_TYPE.search(step.name):
+        return False
+    return any(_nk(k) in MODEL_CALL_KEYS for k in _keys_under(step.raw))
+
+
 ENUM_KEYS = {"enum", "options", "choices", "categories", "allowedvalues",
              "allowed", "labels", "buckets", "intents"}
 
@@ -3126,8 +3184,7 @@ def ai_branch_without_enum(acct: Account):
     """
     for wf in acct.published():
         for i, step in enumerate(wf.steps):
-            if not AI_STEP_TYPE.search(step.type) \
-                    and not AI_STEP_TYPE.search(step.name):
+            if not _is_ai_step(step):
                 continue
             if not any(s.is_branch for s in wf.steps[i + 1:]):
                 continue

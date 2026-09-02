@@ -360,7 +360,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,043 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,046 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
@@ -383,7 +383,7 @@ hand, one at a time, against the raw export**. The ledger is
 marked `real` or `false_positive`, with a note saying why. `scripts/precision_report.py
 --summary` re-derives the number from it.
 
-**145 findings judged, 34 false positives — 23.4%.** Nothing is unjudged; an unjudged
+**145 findings judged, 39 false positives — 26.9%.** Nothing is unjudged; an unjudged
 finding is never counted as a pass, for the same reason the auditor reports a skipped
 check instead of silently omitting it.
 
@@ -395,7 +395,17 @@ verdict with that note attached should never have been `real`. Checked properly,
 premise was backwards and all twenty-two were false. **An unverified claim is not a pass,
 and recording it as one is how a measured number becomes a comfortable one.**
 
-All 34 have been narrowed, and a re-run of the same account now produces **zero known
+It moved again, 23.4% to 26.9%, and for a related reason. GHL049 matched its AI pattern
+against a step's NAME as well as its type, so an If/Else called "Route by AI score" and
+three tag steps called "Tag as ai-hot/warm/cold" were all read as model calls. Five more
+findings that were marked `real` because the wording of each one was plausible, on steps
+that call no model at all. The `ai_safety` pack had already worked this out — a matching
+type is proof, a matching name is a hint needing a prompt or a model setting to back it —
+but GHL049 predates that pack and never inherited the discipline. **The same lesson
+arriving twice is what a duplicated helper buys you**; there is now one definition of an
+AI step, in `rules.py`, and the pack imports it.
+
+All 39 have been narrowed, and a re-run of the same account now produces **zero known
 false positives** — 56 findings where there were 81. The five that mattered most, because
 each put wrong advice in front of an account owner:
 
