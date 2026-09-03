@@ -1,296 +1,522 @@
 {
-  "workflows": [
+ "workflows": [
+  {
+   "_id": "wf_scale_quote_runaway",
+   "name": "Scale Demo - Quote Sync Runaway",
+   "status": "published",
+   "triggers": [
     {
-      "_id": "wf_scale_quote_runaway",
-      "name": "Scale Demo - Quote Sync Runaway",
-      "status": "published",
-      "triggers": [
-        {"type": "contact_tag_added", "name": "Tagged quote-requested",
-         "filters": [{"tag": "scale-quote-requested"}]}
-      ],
-      "steps": [
-        {
-          "id": "q1",
-          "type": "webhook",
-          "name": "Ask the quoting engine for a price",
-          "next": "q2",
-          "meta": {
-            "method": "POST",
-            "url": "https://quotes.scale-demo.example/v1/price",
-            "saveResponse": true
-          }
-        },
-        {
-          "id": "q2",
-          "type": "if_else",
-          "name": "Did a price come back?",
-          "next": "q3",
-          "meta": {
-            "conditions": [{"field": "response.price", "operator": "exists"}]
-          }
-        },
-        {
-          "id": "q3",
-          "type": "sms",
-          "name": "Send the price",
-          "next": "q4",
-          "meta": {
-            "body": "Your quote is ready: {{ custom_values.quote_link }}. Reply STOP to opt out."
-          }
-        },
-        {
-          "id": "q4",
-          "type": "goto",
-          "name": "Price it again",
-          "meta": {"targetStepId": "q1"}
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "wf_scale_enrichment",
-      "name": "Scale Demo - Enrichment Lookup",
-      "status": "published",
-      "triggers": [
-        {"type": "form_submitted", "name": "Intake form",
-         "filters": [{"field": "formId", "value": "form_scale_intake"}]}
-      ],
-      "steps": [
-        {
-          "type": "webhook",
-          "name": "Look up the company",
-          "meta": {
-            "method": "GET",
-            "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
-            "saveResponse": true
-          }
-        },
-        {
-          "type": "if_else",
-          "name": "Is it a company we serve?",
-          "meta": {
-            "conditions": [{"field": "response.industry", "operator": "exists"}]
-          }
-        },
-        {
-          "type": "webhook",
-          "name": "Look up the company again for the headcount",
-          "meta": {
-            "method": "GET",
-            "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
-            "saveResponse": true
-          }
-        },
-        {
-          "type": "update_contact_field",
-          "name": "Write the headcount",
-          "meta": {"field": "company_headcount", "value": "{{ response.headcount }}"}
-        },
-        {
-          "type": "webhook",
-          "name": "Look up the company a third time for the owner",
-          "meta": {
-            "method": "GET",
-            "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
-            "saveResponse": true
-          }
-        },
-        {
-          "type": "sms",
-          "name": "Confirm we have their details",
-          "meta": {
-            "body": "Thanks {{ contact.first_name }} - got everything we need. Reply STOP to opt out."
-          }
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "wf_scale_inventory_retry",
-      "name": "Scale Demo - Inventory Retry Ladder",
-      "status": "published",
-      "triggers": [
-        {"type": "inbound_webhook", "name": "Order paid"}
-      ],
-      "steps": [
-        {
-          "id": "r1",
-          "type": "webhook",
-          "name": "Reserve the stock",
-          "next": "r2",
-          "meta": {
-            "method": "POST",
-            "url": "https://inventory.scale-demo.example/v1/reserve",
-            "saveResponse": true,
-            "headers": {"Idempotency-Key": "{{ contact.id }}-{{ inboundWebhookRequest.order_id }}"}
-          }
-        },
-        {
-          "id": "r2",
-          "type": "wait",
-          "name": "Wait 2 minutes",
-          "next": "r3",
-          "meta": {"delay": "2 minutes"}
-        },
-        {
-          "id": "r3",
-          "type": "if_else",
-          "name": "Reserved, or under 3 tries?",
-          "next": "r4",
-          "meta": {
-            "conditions": [
-              {"field": "response.reserved", "operator": "is", "value": "false"},
-              {"field": "contact.attempt_count", "operator": "lt", "value": "3"}
-            ]
-          }
-        },
-        {
-          "id": "r4",
-          "type": "goto",
-          "name": "Try the reservation again",
-          "meta": {"targetStepId": "r1"}
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "wf_scale_reactivation",
-      "name": "Scale Demo - 30 Day Reactivation",
-      "status": "published",
-      "triggers": [
-        {"type": "form_submitted", "name": "Pricing form",
-         "filters": [{"field": "formId", "value": "form_scale_pricing"}]}
-      ],
-      "steps": [
-        {
-          "type": "sms",
-          "name": "Day 0 - thanks",
-          "meta": {
-            "body": "Thanks for the details {{ contact.first_name }} - I'll send over the pricing shortly. Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "wait",
-          "name": "Wait 10 days",
-          "meta": {"delay": "10 days", "stopOnResponse": true}
-        },
-        {
-          "type": "sms",
-          "name": "Day 10 - still interested?",
-          "meta": {
-            "body": "Still weighing it up {{ contact.first_name }}? Happy to answer anything. Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "wait",
-          "name": "Wait 20 days",
-          "meta": {"delay": "20 days", "stopOnResponse": true}
-        },
-        {
-          "type": "sms",
-          "name": "Day 30 - last touch",
-          "meta": {
-            "body": "Closing your file unless I hear back {{ contact.first_name }}. Reply STOP to opt out."
-          }
-        }
-      ],
-      "settings": {"allowReentry": true, "sendingWindow": {"start": "09:00", "end": "19:00", "timezone": "contact"}}
-    },
-    {
-      "_id": "wf_scale_winback_feeder",
-      "name": "Scale Demo - Winback Feeder",
-      "status": "published",
-      "triggers": [
-        {"type": "contact_tag_added", "name": "Tagged winback",
-         "filters": [{"tag": "scale-winback"}]}
-      ],
-      "steps": [
-        {
-          "type": "sms",
-          "name": "Winback offer",
-          "meta": {
-            "body": "We kept your spot {{ contact.first_name }} - want it back? Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "add_to_workflow",
-          "name": "Hand off to the closer",
-          "meta": {"targetWorkflowId": "wf_scale_winback_closer"}
-        }
-      ],
-      "settings": {"allowReentry": true}
-    },
-    {
-      "_id": "wf_scale_winback_closer",
-      "name": "Scale Demo - Winback Closer",
-      "status": "published",
-      "triggers": [
-        {"type": "contact_tag_added", "name": "Tagged winback-closing",
-         "filters": [{"tag": "scale-winback-closing"}]}
-      ],
-      "steps": [
-        {
-          "type": "sms",
-          "name": "Closing offer",
-          "meta": {
-            "body": "Last call on the spot {{ contact.first_name }}. Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "add_to_workflow",
-          "name": "Back to the feeder for another round",
-          "meta": {"targetWorkflowId": "wf_scale_winback_feeder"}
-        }
-      ],
-      "settings": {"allowReentry": true}
-    },
-    {
-      "_id": "wf_scale_intake_tree",
-      "name": "Scale Demo - Intake Decision Tree",
-      "status": "published",
-      "triggers": [
-        {"type": "form_submitted", "name": "Triage form",
-         "filters": [{"field": "formId", "value": "form_scale_triage"}]}
-      ],
-      "steps": [
-        {
-          "id": "t1",
-          "type": "if_else",
-          "name": "Is it a new patient?",
-          "meta": {"conditions": [{"field": "contact.patient_type", "operator": "is", "value": "new"}]}
-        },
-        {
-          "id": "t2",
-          "type": "if_else",
-          "name": "Are they insured?",
-          "parentKey": "t1-yes",
-          "meta": {"conditions": [{"field": "contact.insurance", "operator": "exists"}]}
-        },
-        {
-          "id": "t3",
-          "type": "if_else",
-          "name": "In network?",
-          "parentKey": "t2-yes",
-          "meta": {"conditions": [{"field": "contact.insurer", "operator": "is", "value": "in-network"}]}
-        },
-        {
-          "id": "t4",
-          "type": "if_else",
-          "name": "Booking this week?",
-          "parentKey": "t3-yes",
-          "meta": {"conditions": [{"field": "contact.preferred_week", "operator": "is", "value": "this"}]}
-        },
-        {
-          "id": "t5",
-          "type": "sms",
-          "name": "Send the in-network booking link",
-          "parentKey": "t4-yes",
-          "meta": {
-            "body": "You're in network {{ contact.first_name }} - book here: {{ custom_values.booking_link }}. Reply STOP to opt out."
-          }
-        }
-      ],
-      "settings": {}
+     "type": "contact_tag_added",
+     "name": "Tagged quote-requested",
+     "filters": [
+      {
+       "tag": "scale-quote-requested"
+      }
+     ]
     }
-  ]
+   ],
+   "steps": [
+    {
+     "id": "q1",
+     "type": "webhook",
+     "name": "Ask the quoting engine for a price",
+     "next": "q2",
+     "meta": {
+      "method": "POST",
+      "url": "https://quotes.scale-demo.example/v1/price",
+      "saveResponse": true
+     }
+    },
+    {
+     "id": "q2",
+     "type": "if_else",
+     "name": "Did a price come back?",
+     "next": "q3",
+     "meta": {
+      "conditions": [
+       {
+        "field": "response.price",
+        "operator": "exists"
+       }
+      ]
+     }
+    },
+    {
+     "id": "q3",
+     "type": "sms",
+     "name": "Send the price",
+     "next": "q4",
+     "meta": {
+      "body": "Your quote is ready: {{ custom_values.quote_link }}. Reply STOP to opt out."
+     }
+    },
+    {
+     "id": "q4",
+     "type": "goto",
+     "name": "Price it again",
+     "meta": {
+      "targetStepId": "q1"
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_scale_enrichment",
+   "name": "Scale Demo - Enrichment Lookup",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "form_submitted",
+     "name": "Intake form",
+     "filters": [
+      {
+       "field": "formId",
+       "value": "form_scale_intake"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "webhook",
+     "name": "Look up the company",
+     "meta": {
+      "method": "GET",
+      "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
+      "saveResponse": true
+     }
+    },
+    {
+     "type": "if_else",
+     "name": "Is it a company we serve?",
+     "meta": {
+      "conditions": [
+       {
+        "field": "response.industry",
+        "operator": "exists"
+       }
+      ]
+     }
+    },
+    {
+     "type": "webhook",
+     "name": "Look up the company again for the headcount",
+     "meta": {
+      "method": "GET",
+      "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
+      "saveResponse": true
+     }
+    },
+    {
+     "type": "update_contact_field",
+     "name": "Write the headcount",
+     "meta": {
+      "field": "company_headcount",
+      "value": "{{ response.headcount }}"
+     }
+    },
+    {
+     "type": "webhook",
+     "name": "Look up the company a third time for the owner",
+     "meta": {
+      "method": "GET",
+      "url": "https://enrich.scale-demo.example/v1/company?domain={{ contact.website }}",
+      "saveResponse": true
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Confirm we have their details",
+     "meta": {
+      "body": "Thanks {{ contact.first_name }} - got everything we need. Reply STOP to opt out."
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_scale_inventory_retry",
+   "name": "Scale Demo - Inventory Retry Ladder",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "inbound_webhook",
+     "name": "Order paid"
+    }
+   ],
+   "steps": [
+    {
+     "id": "r1",
+     "type": "webhook",
+     "name": "Reserve the stock",
+     "next": "r2",
+     "meta": {
+      "method": "POST",
+      "url": "https://inventory.scale-demo.example/v1/reserve",
+      "saveResponse": true,
+      "headers": {
+       "Idempotency-Key": "{{ contact.id }}-{{ inboundWebhookRequest.order_id }}"
+      }
+     }
+    },
+    {
+     "id": "r2",
+     "type": "wait",
+     "name": "Wait 2 minutes",
+     "next": "r3",
+     "meta": {
+      "delay": "2 minutes"
+     }
+    },
+    {
+     "id": "r3",
+     "type": "if_else",
+     "name": "Reserved, or under 3 tries?",
+     "next": "r4",
+     "meta": {
+      "conditions": [
+       {
+        "field": "response.reserved",
+        "operator": "is",
+        "value": "false"
+       },
+       {
+        "field": "contact.attempt_count",
+        "operator": "lt",
+        "value": "3"
+       }
+      ]
+     }
+    },
+    {
+     "id": "r4",
+     "type": "goto",
+     "name": "Try the reservation again",
+     "meta": {
+      "targetStepId": "r1"
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_scale_reactivation",
+   "name": "Scale Demo - 30 Day Reactivation",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "form_submitted",
+     "name": "Pricing form",
+     "filters": [
+      {
+       "field": "formId",
+       "value": "form_scale_pricing"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "sms",
+     "name": "Day 0 - thanks",
+     "meta": {
+      "body": "Thanks for the details {{ contact.first_name }} - I'll send over the pricing shortly. Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "wait",
+     "name": "Wait 10 days",
+     "meta": {
+      "delay": "10 days",
+      "stopOnResponse": true
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Day 10 - still interested?",
+     "meta": {
+      "body": "Still weighing it up {{ contact.first_name }}? Happy to answer anything. Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "wait",
+     "name": "Wait 20 days",
+     "meta": {
+      "delay": "20 days",
+      "stopOnResponse": true
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Day 30 - last touch",
+     "meta": {
+      "body": "Closing your file unless I hear back {{ contact.first_name }}. Reply STOP to opt out."
+     }
+    }
+   ],
+   "settings": {
+    "allowReentry": true,
+    "sendingWindow": {
+     "start": "09:00",
+     "end": "19:00",
+     "timezone": "contact"
+    }
+   }
+  },
+  {
+   "_id": "wf_scale_winback_feeder",
+   "name": "Scale Demo - Winback Feeder",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "contact_tag_added",
+     "name": "Tagged winback",
+     "filters": [
+      {
+       "tag": "scale-winback"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "sms",
+     "name": "Winback offer",
+     "meta": {
+      "body": "We kept your spot {{ contact.first_name }} - want it back? Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "add_to_workflow",
+     "name": "Hand off to the closer",
+     "meta": {
+      "targetWorkflowId": "wf_scale_winback_closer"
+     }
+    }
+   ],
+   "settings": {
+    "allowReentry": true
+   }
+  },
+  {
+   "_id": "wf_scale_winback_closer",
+   "name": "Scale Demo - Winback Closer",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "contact_tag_added",
+     "name": "Tagged winback-closing",
+     "filters": [
+      {
+       "tag": "scale-winback-closing"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "sms",
+     "name": "Closing offer",
+     "meta": {
+      "body": "Last call on the spot {{ contact.first_name }}. Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "add_to_workflow",
+     "name": "Back to the feeder for another round",
+     "meta": {
+      "targetWorkflowId": "wf_scale_winback_feeder"
+     }
+    }
+   ],
+   "settings": {
+    "allowReentry": true
+   }
+  },
+  {
+   "_id": "wf_scale_intake_tree",
+   "name": "Scale Demo - Intake Decision Tree",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "form_submitted",
+     "name": "Triage form",
+     "filters": [
+      {
+       "field": "formId",
+       "value": "form_scale_triage"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "id": "t1",
+     "type": "if_else",
+     "name": "Is it a new patient?",
+     "meta": {
+      "conditions": [
+       {
+        "field": "contact.patient_type",
+        "operator": "is",
+        "value": "new"
+       }
+      ]
+     }
+    },
+    {
+     "id": "t2",
+     "type": "if_else",
+     "name": "Are they insured?",
+     "parentKey": "t1-yes",
+     "meta": {
+      "conditions": [
+       {
+        "field": "contact.insurance",
+        "operator": "exists"
+       }
+      ]
+     }
+    },
+    {
+     "id": "t3",
+     "type": "if_else",
+     "name": "In network?",
+     "parentKey": "t2-yes",
+     "meta": {
+      "conditions": [
+       {
+        "field": "contact.insurer",
+        "operator": "is",
+        "value": "in-network"
+       }
+      ]
+     }
+    },
+    {
+     "id": "t4",
+     "type": "if_else",
+     "name": "Booking this week?",
+     "parentKey": "t3-yes",
+     "meta": {
+      "conditions": [
+       {
+        "field": "contact.preferred_week",
+        "operator": "is",
+        "value": "this"
+       }
+      ]
+     }
+    },
+    {
+     "id": "t5",
+     "type": "sms",
+     "name": "Send the in-network booking link",
+     "parentKey": "t4-yes",
+     "meta": {
+      "body": "You're in network {{ contact.first_name }} - book here: {{ custom_values.booking_link }}. Reply STOP to opt out."
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "wf_sp_chain_intake",
+   "name": "Scale Demo - Chain Intake Router",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "form_submitted",
+     "name": "Form submitted",
+     "filters": []
+    }
+   ],
+   "steps": [
+    {
+     "type": "add_contact_tag",
+     "name": "Tag as qualified",
+     "meta": {
+      "tags": [
+       "scale-chain-qualify"
+      ]
+     }
+    }
+   ],
+   "settings": {
+    "timezone": "contact",
+    "window": {
+     "start": "09:00",
+     "end": "20:00"
+    }
+   }
+  },
+  {
+   "_id": "wf_sp_chain_direct",
+   "name": "Scale Demo - Chain First Touch",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "form_submitted",
+     "name": "Form submitted",
+     "filters": []
+    }
+   ],
+   "steps": [
+    {
+     "type": "wait",
+     "name": "Hold 1 minute",
+     "meta": {
+      "delay": "1 minute"
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Instant reply SMS",
+     "meta": {
+      "body": "Hey {{contact.first_name}} - thanks for reaching out - I've got your details in front of me now. What's the best time to reach you today? Reply STOP to opt out."
+     }
+    }
+   ],
+   "settings": {
+    "timezone": "contact",
+    "window": {
+     "start": "09:00",
+     "end": "20:00"
+    }
+   }
+  },
+  {
+   "_id": "wf_sp_chain_nudge",
+   "name": "Scale Demo - Chain Qualified Nudge",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "contact_tag_added",
+     "name": "Tag added",
+     "filters": [
+      {
+       "tag": "scale-chain-qualify"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "sms",
+     "name": "Booking nudge SMS",
+     "meta": {
+      "body": "Hey {{contact.first_name}} - sounds like you're ready. Grab a time that works and we'll take it from there: https://api.leadconnectorhq.com/widget/booking/CVokAlI8fgw4WYWoCtQz Reply STOP to opt out."
+     }
+    }
+   ],
+   "settings": {
+    "timezone": "contact",
+    "window": {
+     "start": "08:00",
+     "end": "20:00"
+    }
+   }
+  }
+ ]
 }

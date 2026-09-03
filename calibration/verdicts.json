@@ -11,7 +11,7 @@
       "workflows": 13
     },
     "requena-live-sep03": {
-      "findings": 39,
+      "findings": 40,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-03.json",
       "workflows": 13
     }
@@ -1291,6 +1291,16 @@
       "title": "Conversions are handled by 'Appointment Cancelled - Clean Up & One Rebook Ask' \u2014 confirm this cadence is in its remove list",
       "verdict": "real",
       "workflow": "Missed Call Text Back"
+    },
+    "aeca07885016c84f": {
+      "account": "requena-live-sep03",
+      "note": "Verified Sep-03 2026 by hand against the bundle before the rule was written: 'Lead Intake - Qualify, Route & Notify' (form_submitted, no filters, no outbound, no waits) adds 'ai-qualify' at step 15; 'AI Lead Qualification - Score, Route & Sync' triggers on tag ai-qualify and its first outbound 'Booking nudge SMS' (no waits, booking widget + 'Grab a time that works') goes out at 0s; 'Speed to Lead - 5 Minute Response' (form_submitted, no filters) holds 1 minute then sends 'Instant reply SMS' ('thanks for reaching out\u2026 What's the best time to reach you today?'). Neither removes the other. Send windows 08:00 vs 09:00. Confirmed by 3 adversarial refuters in the Sep-03 recall sweep (wf_4672d25b-25d) before shipping as GHL104.",
+      "rule": "GHL104",
+      "severity": "high",
+      "step": "AI Lead Qualification - Score, Route & Sync via 'Lead Intake - Qualify, Route & Notify' \u2192 'ai-qualify'",
+      "title": "One 'form_submitted' event starts 'Speed to Lead - 5 Minute Response' and, through 'Lead Intake - Qualify, Route & Notify' tagging 'ai-qualify', 'AI Lead Qualification - Score, Route & Sync' too",
+      "verdict": "real",
+      "workflow": "Speed to Lead - 5 Minute Response"
     },
     "b120b0032fb2a2cb": {
       "account": "account-bundle-2026-09-01",

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from ..model import Account, Step, Workflow
+from ..model import Account, Step, Workflow, _first
 from ..rules import Finding, Skip, _finding, rule
 
 
@@ -1016,3 +1016,201 @@ def untestable_branch_depth(acct: Account):
                  "wrong sequence, months after the branch that did it was "
                  "built, and as an hour of somebody's time every time it "
                  "needs an edit.")
+
+
+# --------------------------------------------------------------------------
+# GHL104 — one event, two conversations, through a tag chain
+# --------------------------------------------------------------------------
+
+# Copy that opens a conversation: an acknowledgement AND a callback ask. Both
+# are required. "Thanks for reaching out" on its own appears mid-sequence
+# constantly, and a single signal is how this check would start reading a
+# nurture drip as an introduction.
+_OPENER_ACK = re.compile(
+    r"thanks for (reaching out|getting in touch|your (enquiry|inquiry))"
+    r"|(just )?got your details|received your (enquiry|inquiry|request|details)",
+    re.I)
+_OPENER_ASK = re.compile(
+    r"what.?s (the )?best time to (reach|call) you|when.?s a good time"
+    r"|can i (give you a )?call|good time to (call|chat)",
+    re.I)
+# Copy that closes: a booking widget AND a pick-a-slot imperative.
+_CLOSER_LINK = re.compile(r"/widget/(booking|bookings|appointment)/", re.I)
+_CLOSER_ASK = re.compile(
+    r"grab (a|whichever|any) (time|slot)|pick a (time|slot)|book a (time|slot)"
+    r"|choose a (time|slot)|lock in a (time|slot)",
+    re.I)
+
+# Two first touches closer together than this are one moment to the contact.
+_SAME_MOMENT_MINUTES = 60.0
+
+
+def _first_touch(wf: Workflow):
+    """The first outbound step and the declared minutes before it.
+
+    Only stated waits count. A reply-wait or a wait whose length is not in
+    the export makes the delay unknowable and the workflow is dropped from
+    the comparison — an estimate here would be the finding's whole basis.
+    """
+    minutes = 0.0
+    for step in wf.steps:
+        if step.is_outbound:
+            return step, minutes
+        if step.is_wait:
+            held = _wait_minutes(step)
+            if held is None:
+                return None, None
+            minutes += held
+    return None, None
+
+
+def _tag_hop_is_immediate(wf: Workflow, tag: str) -> bool:
+    """Does this workflow add the tag before any pause?"""
+    for step in wf.steps:
+        if tag in {str(t).strip().lower() for t in step.tags_added()}:
+            return True
+        if step.is_wait:
+            return False
+    return False
+
+
+def _coordinated(a: Workflow, b: Workflow) -> bool:
+    """Does either workflow pull contacts out of the other by id or name?"""
+    for src, dst in ((a, b), (b, a)):
+        for step in src.steps:
+            if "remove" not in _nk(step.type) or "workflow" not in _nk(step.type):
+                continue
+            blob = step.text().lower()
+            if (dst.id and str(dst.id).lower() in blob) \
+                    or (dst.name and dst.name.lower() in blob):
+                return True
+    return False
+
+
+def _window_hours(wf: Workflow) -> str:
+    """'09:00-20:00' from a send window, or '' when it states no hours."""
+    win = wf.send_window() or {}
+    start = _first(win, "start", "startTime", "from", default="")
+    end = _first(win, "end", "endTime", "to", default="")
+    return f"{start}-{end}" if start and end else ""
+
+
+def _is_opener(step: Step) -> bool:
+    body = step.bodies()
+    return bool(_OPENER_ACK.search(body) and _OPENER_ASK.search(body))
+
+
+def _is_closer(step: Step) -> bool:
+    body = step.bodies()
+    return bool(_CLOSER_LINK.search(body) and _CLOSER_ASK.search(body))
+
+
+@rule("GHL104", "One event starts two conversations through a tag chain",
+      "high", "routing", "triggers", "speed", "copy")
+def chained_enrollment_collision(acct: Account):
+    """Two workflows reach one lead from one event, and only one is visible.
+
+    GHL015 catches two workflows on the same trigger. This is the version that
+    hides from it: workflow A fires on the event and sends nothing, but adds a
+    tag; workflow B fires on that tag and sends. Workflow C fires on the same
+    event directly and sends too. In the builder B and C share no trigger, so
+    nothing looks like a collision — and the contact gets two first messages,
+    from one number, minutes apart.
+
+    The hop has to be immediate (no pause in A before the tag lands) and both
+    first touches have to have a declared delay, so the comparison is between
+    two numbers the export states. Waits of unknown length drop the pair; an
+    estimate is exactly what this must not be built on. A pair where either
+    workflow removes contacts from the other is coordinated by design and is
+    left alone.
+
+    The copy decides the severity. When the message on the chained path is a
+    close ("grab a time" plus a booking widget) and the direct path opens
+    ("thanks for reaching out - what's the best time to call you?"), the
+    ordering matters and the finding says so: a close that lands before the
+    introduction, followed by a request to name a callback time, is what
+    earns a STOP from the lead the account just scored as ready. Send windows
+    are quoted as evidence and kept out of the arithmetic; they need an
+    arrival time the export does not have.
+    """
+    live = [w for w in acct.published()]
+    seen: set = set()
+    for a in live:
+        a_sigs = set(a.trigger_signatures())
+        if not a_sigs:
+            continue
+        for tag in sorted({str(t).strip().lower() for t in a.tags_added()}):
+            if not tag or not _tag_hop_is_immediate(a, tag):
+                continue
+            for b in live:
+                if b is a or not b.outbound or tag not in b.trigger_tags():
+                    continue
+                b_step, b_delay = _first_touch(b)
+                if b_step is None:
+                    continue
+                for c in live:
+                    if c is a or c is b or not c.outbound:
+                        continue
+                    shared = a_sigs & set(c.trigger_signatures())
+                    if not shared:
+                        continue
+                    c_step, c_delay = _first_touch(c)
+                    if c_step is None:
+                        continue
+                    if abs(b_delay - c_delay) >= _SAME_MOMENT_MINUTES:
+                        continue
+                    if _coordinated(b, c):
+                        continue
+                    key = (b.name, c.name)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    event = sorted(shared)[0][0]
+
+                    backwards = _is_closer(b_step) and _is_opener(c_step) \
+                        and b_delay <= c_delay
+                    order = ""
+                    if backwards:
+                        order = (
+                            f" And the order is wrong: '{b_step.name or b_step.type}' "
+                            f"in '{b.name}' asks them to pick a time and carries the "
+                            f"booking link, while '{c_step.name or c_step.type}' in "
+                            f"'{c.name}' is the introduction — it asks what time to "
+                            f"call them. Going by the declared waits, the close goes "
+                            f"out first and the introduction follows it, asking for "
+                            f"a callback slot after the booking link has already "
+                            f"been sent.")
+                    win_note = ""
+                    b_win, c_win = _window_hours(b), _window_hours(c)
+                    if b_win and c_win and b_win != c_win:
+                        win_note = (
+                            f" The two send windows differ ('{b.name}' {b_win}, "
+                            f"'{c.name}' {c_win}), so for a lead arriving in an hour "
+                            f"one window is open and the other is not, the gap "
+                            f"stretches to however long that hour lasts.")
+
+                    yield _finding(
+                        "GHL104", "high" if backwards else "medium", c,
+                        f"One '{event}' event starts '{c.name}' and, through "
+                        f"'{a.name}' tagging '{tag}', '{b.name}' too",
+                        f"A '{event}' event enrolls '{c.name}' directly; its first "
+                        f"message ('{c_step.name or c_step.type}') goes out after "
+                        f"{_human(c_delay)}. The same event enrolls '{a.name}', "
+                        f"which adds the tag '{tag}' with no pause before it, and that "
+                        f"tag starts '{b.name}', whose first message "
+                        f"('{b_step.name or b_step.type}') goes out after "
+                        f"{_human(b_delay)}. Two conversations open from one number "
+                        f"inside {_human(abs(b_delay - c_delay) or 1)} of each other, "
+                        f"and the builder shows neither one next to the other — they "
+                        f"share no trigger.{order}{win_note}",
+                        f"Decide which workflow owns the first message. Either hold "
+                        f"'{b.name}' behind a check that '{c.name}' has already sent "
+                        f"(a tag it adds on the way out), or move the message into "
+                        f"'{c.name}' and let '{b.name}' stay internal — score, tag, "
+                        f"alert, and send nothing.",
+                        step=f"{b.name} via '{a.name}' → '{tag}'",
+                        cost="It lands hardest on the leads the chain was built to "
+                             "prioritise: two different asks from one number in one "
+                             "minute is the pattern that earns a STOP, or silence, from "
+                             "someone who was about to book.",
+                        reach=len(b.outbound) + len(c.outbound))

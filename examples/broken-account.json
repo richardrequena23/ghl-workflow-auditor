@@ -2998,6 +2998,103 @@
         }
       ],
       "settings": {}
+    },
+    {
+      "_id": "wf_sp_chain_intake",
+      "name": "Scale Demo - Chain Intake Router",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Form submitted",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "add_contact_tag",
+          "name": "Tag as qualified",
+          "meta": {
+            "tags": [
+              "scale-chain-qualify"
+            ]
+          }
+        }
+      ],
+      "settings": {
+        "timezone": "contact",
+        "window": {
+          "start": "09:00",
+          "end": "20:00"
+        }
+      }
+    },
+    {
+      "_id": "wf_sp_chain_direct",
+      "name": "Scale Demo - Chain First Touch",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "form_submitted",
+          "name": "Form submitted",
+          "filters": []
+        }
+      ],
+      "steps": [
+        {
+          "type": "wait",
+          "name": "Hold 1 minute",
+          "meta": {
+            "delay": "1 minute"
+          }
+        },
+        {
+          "type": "sms",
+          "name": "Instant reply SMS",
+          "meta": {
+            "body": "Hey {{contact.first_name}} - thanks for reaching out - I've got your details in front of me now. What's the best time to reach you today? Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "timezone": "contact",
+        "window": {
+          "start": "09:00",
+          "end": "20:00"
+        }
+      }
+    },
+    {
+      "_id": "wf_sp_chain_nudge",
+      "name": "Scale Demo - Chain Qualified Nudge",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag added",
+          "filters": [
+            {
+              "tag": "scale-chain-qualify"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Booking nudge SMS",
+          "meta": {
+            "body": "Hey {{contact.first_name}} - sounds like you're ready. Grab a time that works and we'll take it from there: https://api.leadconnectorhq.com/widget/booking/CVokAlI8fgw4WYWoCtQz Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {
+        "timezone": "contact",
+        "window": {
+          "start": "08:00",
+          "end": "20:00"
+        }
+      }
     }
   ],
   "customFields": [

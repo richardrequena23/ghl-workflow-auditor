@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ghlaudit.model import Account  # noqa: E402
 from ghlaudit.rules import run, run_all  # noqa: E402
 
-MINE = ("GHL089", "GHL090", "GHL091", "GHL092", "GHL093", "GHL094")
+MINE = ("GHL089", "GHL090", "GHL091", "GHL092", "GHL093", "GHL094",
+        "GHL104")
 
 FRAGMENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                         "examples", "packs", "scale_performance.json")
@@ -610,3 +611,128 @@ class PackHygiene(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+# --------------------------------------------------------------------------
+# GHL104
+# --------------------------------------------------------------------------
+
+OPENER = ("Hey {{contact.first_name}} - thanks for reaching out - I've got your "
+          "details in front of me now. What's the best time to reach you today?")
+CLOSER = ("Grab a time that works and we'll take it from there: "
+          "https://api.leadconnectorhq.com/widget/booking/CVokAlI8fgw4WYWoCtQz")
+
+
+def form_trigger():
+    return {"type": "form_submitted", "name": "Form submitted", "filters": []}
+
+
+def tag_trigger(tag):
+    return {"type": "contact_tag_added", "name": "Tag added",
+            "filters": [{"tag": tag}]}
+
+
+def tag_step(*tags):
+    return {"type": "add_contact_tag", "name": "Tag", "meta": {"tags": list(tags)}}
+
+
+def chain(router_steps=None, direct_steps=None, nudge_steps=None,
+          router_status="published", nudge_status="published",
+          direct_status="published", settings=None):
+    router = wf("Intake Router", router_steps or [tag_step("qualify")],
+                triggers=[form_trigger()], status=router_status)
+    direct = wf("First Touch", direct_steps or [pause("Hold", "1 minute"),
+                                                 sms("Instant reply", OPENER)],
+                triggers=[form_trigger()], status=direct_status,
+                settings=settings)
+    nudge = wf("Qualified Nudge", nudge_steps or [sms("Booking nudge", CLOSER)],
+               triggers=[tag_trigger("qualify")], status=nudge_status)
+    return [router, direct, nudge]
+
+
+class ChainedEnrollmentCollision(unittest.TestCase):
+    """GHL104 — one event, two first messages, through a tag nothing shows
+    next to the trigger it came from."""
+
+    def test_the_chain_is_reported_and_the_backwards_order_is_high(self):
+        hits = findings_for("GHL104", chain())
+        self.assertEqual([f.severity for f in hits], ["high"])
+        self.assertEqual(hits[0].workflow, "First Touch")
+        self.assertIn("Qualified Nudge via 'Intake Router'", hits[0].step)
+        self.assertIn("the order is wrong", hits[0].symptom)
+
+    def test_two_conversations_without_the_copy_signals_is_medium(self):
+        hits = findings_for("GHL104", chain(
+            direct_steps=[pause("Hold", "1 minute"),
+                          sms("Welcome", "Welcome aboard - more soon.")]))
+        self.assertEqual([f.severity for f in hits], ["medium"])
+        self.assertNotIn("the order is wrong", hits[0].symptom)
+
+    def test_the_close_going_second_is_not_backwards(self):
+        """Direct path sends at once, the chained close waits two minutes:
+        still two conversations, but the introduction leads."""
+        hits = findings_for("GHL104", chain(
+            direct_steps=[sms("Instant reply", OPENER)],
+            nudge_steps=[pause("Hold", "2 minutes"), sms("Nudge", CLOSER)]))
+        self.assertEqual([f.severity for f in hits], ["medium"])
+
+    def test_an_hour_apart_is_not_one_moment(self):
+        self.assertEqual(findings_for("GHL104", chain(
+            nudge_steps=[pause("Hold", "90 minutes"), sms("Nudge", CLOSER)])),
+            [])
+
+    def test_a_wait_of_unknown_length_drops_the_pair(self):
+        reply_wait = {"type": "wait", "name": "Until they reply",
+                      "meta": {"waitType": "reply"}}
+        self.assertEqual(findings_for("GHL104", chain(
+            nudge_steps=[reply_wait, sms("Nudge", CLOSER)])), [])
+
+    def test_a_pause_before_the_tag_breaks_the_chain(self):
+        self.assertEqual(findings_for("GHL104", chain(
+            router_steps=[pause("Think", "2 hours"), tag_step("qualify")])),
+            [])
+
+    def test_a_workflow_handing_off_to_its_own_follow_on_is_not_a_collision(self):
+        """Router sends, then tags its own follow-on: a sequence, not a race.
+        Without a third workflow on the same event there is nothing to
+        collide with."""
+        flows = chain(router_steps=[sms("Intro", OPENER), tag_step("qualify")])
+        self.assertEqual(findings_for("GHL104", flows[::2]), [])
+
+    def test_coordinated_workflows_are_left_alone(self):
+        stop = {"type": "remove_from_workflow", "name": "Stop first touch",
+                "meta": {"workflow_id": "First Touch"}}
+        self.assertEqual(findings_for("GHL104", chain(
+            nudge_steps=[stop, sms("Booking nudge", CLOSER)])), [])
+
+    def test_a_draft_anywhere_in_the_chain_is_silent(self):
+        self.assertEqual(findings_for("GHL104", chain(router_status="draft")), [])
+        self.assertEqual(findings_for("GHL104", chain(nudge_status="draft")), [])
+        self.assertEqual(findings_for("GHL104", chain(direct_status="draft")), [])
+
+    def test_a_different_event_is_not_a_collision(self):
+        flows = chain()
+        flows[1]["triggers"] = [{"type": "contact_created", "name": "New",
+                                 "filters": []}]
+        self.assertEqual(findings_for("GHL104", flows), [])
+
+    def test_the_tag_has_to_be_the_one_the_nudge_listens_for(self):
+        self.assertEqual(findings_for("GHL104", chain(
+            router_steps=[tag_step("something-else")])), [])
+
+    def test_a_nudge_that_sends_nothing_is_not_a_conversation(self):
+        self.assertEqual(findings_for("GHL104", chain(
+            nudge_steps=[tag_step("scored")])), [])
+
+    def test_send_windows_are_quoted_when_they_differ(self):
+        flows = chain(settings={"window": {"start": "09:00", "end": "20:00"}})
+        flows[2]["settings"] = {"window": {"start": "08:00", "end": "20:00"}}
+        hits = findings_for("GHL104", flows)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("08:00-20:00", hits[0].symptom)
+        self.assertIn("09:00-20:00", hits[0].symptom)
+
+    def test_one_finding_per_pair(self):
+        flows = chain()
+        flows[0]["steps"] = [tag_step("qualify"), tag_step("qualify")]
+        self.assertEqual(len(findings_for("GHL104", flows)), 1)
