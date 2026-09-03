@@ -1389,3 +1389,185 @@ def reminders_leave_no_time_to_reschedule(acct: Account):
             step=names, reach=len(wf.outbound),
             cost="No-shows this ladder could have caught still happen, and the "
                  "extra messages land where they cannot change anything.")
+
+
+# --------------------------------------------------------------------------
+# GHL103 — the booking screen and the confirmation text disagree
+# --------------------------------------------------------------------------
+
+# What a booking screen says when the slot is only a REQUEST. Sentence-scoped,
+# and a short closed list: every phrase here asserts that confirmation has not
+# happened yet, which is the one claim that cannot be true on a calendar whose
+# own setting confirms the slot the moment it is picked.
+_REQUEST_COPY = re.compile(
+    r"appointment request"
+    r"|will (contact|call|reach out to|be in touch with|get back to) you\b"
+    r".{0,40}\bconfirm"
+    r"|pending (our )?confirmation"
+    r"|once (we|it)('s| is| has been)? confirm"
+    r"|request (has been |was )?(received|submitted)"
+    r"|to confirm your (request|booking|appointment)",
+    re.I)
+
+# What the account's own workflow tells the same person a moment later.
+_BOOKED_COPY = re.compile(
+    r"you'?re booked|you are booked|is confirmed|has been confirmed"
+    r"|you'?re on the calendar|you are on the calendar|see you (on|at)\b",
+    re.I)
+
+# Thank-you types under which the message is actually shown. A redirect never
+# displays it, so its text cannot contradict anything.
+_MESSAGE_SHOWN = ("thankyoumessage", "message", "thank_you_message",
+                  "thankyou", "thank_you")
+
+
+def _thanks_message(rec: dict) -> str:
+    for key in ("formSubmitThanksMessage", "thankYouMessage",
+                "thanksMessage", "formSubmitMessage"):
+        val = rec.get(key)
+        if isinstance(val, str) and val.strip():
+            return val
+    return ""
+
+
+def _shows_thanks_message(rec: dict) -> bool:
+    kind = rec.get("formSubmitType", rec.get("thankYouType"))
+    if kind in (None, ""):
+        return True  # the platform default is the message
+    return _nk(kind) in _MESSAGE_SHOWN
+
+
+def _confirms_bookings_on(acct: Account, cal_id: str):
+    """The published workflow that greets a CONFIRMED booking on this calendar
+    with copy saying it is booked, and the step that says so."""
+    want = str(cal_id).lower()
+    for wf in acct.published():
+        first = next((s for s in wf.steps if s.is_outbound), None)
+        if first is None or not _BOOKED_COPY.search(first.bodies()):
+            continue
+        for trg in wf.triggers:
+            if "appointment" not in trg.canonical_type():
+                continue
+            blob = trg.filter_blob()
+            if "confirmed" in blob and want in blob:
+                return wf, first
+    return None, None
+
+
+@rule("GHL103", "Booking screen says 'we'll confirm' on a calendar that "
+      "already did", "medium", "routing", "appointments", "copy")
+def thank_you_screen_contradicts_auto_confirm(acct: Account):
+    """The calendar auto-confirms, the screen says it does not, the text says it does.
+
+    GoHighLevel ships every new calendar with the same thank-you text: "Thank
+    you for your appointment request. We will contact you shortly to confirm
+    your request." That sentence is true on a calendar that hand-confirms and
+    false on one set to auto-confirm — and auto-confirm is the setting that
+    fires the account's own "you're booked" workflow. So the last thing the
+    contact reads on the site says the slot is provisional, and the first thing
+    that lands on their phone says it is not.
+
+    Standalone stock copy on an auto-confirm calendar is left alone: a business
+    that confirms by hand afterwards anyway is not wrong, only slow, and a
+    workflow export cannot see its office. This fires only when the account
+    contradicts ITSELF — its own published workflow, triggered on the confirmed
+    status of this very calendar, opens with copy asserting the booking. Both
+    halves are stated outright in the export: `autoConfirm` is a boolean, the
+    trigger names the calendar and the status, and the copy is quoted.
+    """
+    inv = acct.inventory
+    if not inv.has("calendars"):
+        # Nothing to contradict unless some workflow confirms bookings at all.
+        # The calendar list has to be asked for by id though, so this reads
+        # every appointment trigger for the shape and reports the gap.
+        for wf in acct.published():
+            first = next((s for s in wf.steps if s.is_outbound), None)
+            if first is None or not _BOOKED_COPY.search(first.bodies()):
+                continue
+            if any("appointment" in t.canonical_type()
+                   and "confirmed" in t.filter_blob() for t in wf.triggers):
+                yield Skip(
+                    rule="GHL103",
+                    title="Booking screen says 'we'll confirm' on a calendar "
+                          "that already did",
+                    reason="A workflow greets confirmed bookings with "
+                           "'you're booked', but the location's calendars "
+                           "were not supplied — so whether the calendar "
+                           "auto-confirms and what its booking screen says "
+                           "cannot be read. The finding is the disagreement "
+                           "between those two, and neither is in a workflow "
+                           "export.",
+                    needs="calendars exported as full objects, each carrying "
+                          "autoConfirm, formSubmitType and "
+                          "formSubmitThanksMessage",
+                    category="routing")
+                return
+        return
+
+    records = inv.calendar_records
+    with_settings = [r for r in records.values() if "autoConfirm" in r]
+    if not with_settings:
+        # Ids and names only. Only a hole if there is something to check.
+        for cal_id in records:
+            wf, _ = _confirms_bookings_on(acct, cal_id)
+            if wf is not None:
+                yield Skip(
+                    rule="GHL103",
+                    title="Booking screen says 'we'll confirm' on a calendar "
+                          "that already did",
+                    reason="The calendar list in this bundle carries ids and "
+                           "names only, not the calendars' own settings. "
+                           "Whether a booking auto-confirms, and what the "
+                           "screen says to the person who just booked, are "
+                           "both calendar-level settings — and the finding is "
+                           "the disagreement between those two.",
+                    needs="calendars exported as full objects, each carrying "
+                          "autoConfirm, formSubmitType and "
+                          "formSubmitThanksMessage",
+                    category="routing")
+                return
+        return
+
+    for cal_id, rec in records.items():
+        if rec.get("autoConfirm") is not True:
+            continue  # a real request calendar: the copy is true
+        if not _shows_thanks_message(rec):
+            continue  # redirected away; the message is never seen
+        message = _thanks_message(rec)
+        hits = [s.strip() for s in _sentences(message)
+                if _REQUEST_COPY.search(s)]
+        if not hits:
+            continue
+        # Quote the sentence that makes the promise, when there is one.
+        hit = next((h for h in hits if re.search(r"confirm", h, re.I)),
+                   hits[0])
+        wf, step = _confirms_bookings_on(acct, cal_id)
+        if wf is None:
+            continue  # bad copy alone is not a contradiction this can prove
+        cal_name = str(rec.get("name") or inv.calendars.get(cal_id) or cal_id)
+        yield _finding(
+            "GHL103", "medium", wf,
+            f"The '{cal_name}' booking screen says \"we'll confirm\" — the "
+            f"calendar already did, and '{step.name or step.type}' says so",
+            f"The '{cal_name}' calendar is set to auto-confirm, so a booking "
+            f"is confirmed the instant someone picks a slot — that is the "
+            f"status that starts '{wf.name}'. But the screen they land on "
+            f"still says \"{hit}.\" Moments later '{step.name or step.type}' "
+            f"arrives telling them they are booked. The last thing they read "
+            f"on the site and the first thing that reaches their phone say "
+            f"opposite things, and the site's version is GoHighLevel's stock "
+            f"text, not a decision anyone made.",
+            f"Rewrite the calendar's thank-you message to match what the "
+            f"calendar does: confirm the booking, restate the time, say what "
+            f"happens next (Calendars → {cal_name} → Forms & Payment). If the "
+            f"intent really is to hand-confirm each slot, switch auto-confirm "
+            f"off instead — and then move '{wf.name}' off the confirmed-status "
+            f"trigger, or it will keep congratulating people on a slot nobody "
+            f"has accepted.",
+            step=f"calendar '{cal_name}'",
+            cost="A contact who believes the screen treats the slot as "
+                 "provisional and leaves it out of their diary, then reads the "
+                 "confirmation text as a mismatch. It surfaces weeks later as "
+                 "a no-show nobody can explain, and the closer's hour is paid "
+                 "for either way.",
+            reach=len(wf.outbound))

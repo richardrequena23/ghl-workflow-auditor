@@ -832,7 +832,11 @@ class Inventory:
     did not get reports itself as skipped rather than passing quietly.
     """
 
-    calendars: dict = field(default_factory=dict)
+    calendars: dict = field(default_factory=dict)      # id -> name
+    # id -> the calendar object as exported. `calendars` keeps only the name,
+    # which is all the reference checks need; the settings checks (does the
+    # slot auto-confirm, what does the booking screen say) need the record.
+    calendar_records: dict = field(default_factory=dict)
     users: dict = field(default_factory=dict)          # id -> {"name", "active"}
     pipelines: dict = field(default_factory=dict)
     stages: dict = field(default_factory=dict)         # id -> {"name", "pipeline"}
@@ -904,6 +908,13 @@ class Inventory:
         if key:
             inv.calendars = _id_map(raw)
             inv.provided.add("calendars")
+            items = raw.values() if isinstance(raw, dict) else raw
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                ident = _first(item, "id", "_id", "key", default=None)
+                if ident is not None:
+                    inv.calendar_records[str(ident)] = item
 
         key, raw = pick("users", "staff", "teamMembers")
         if key:

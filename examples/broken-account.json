@@ -1350,6 +1350,39 @@
       "settings": {}
     },
     {
+      "_id": "wf_cb_screen_denies",
+      "name": "Calendar Booking Demo - Confirms What The Screen Denied",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment",
+          "name": "Strategy Call Booked",
+          "conditions": [
+            {
+              "operator": "==",
+              "field": "calendar.id",
+              "value": "CVokAlI8fgw4WYWoCtQz"
+            },
+            {
+              "operator": "==",
+              "field": "appointment.status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "sms",
+          "name": "Confirmation SMS",
+          "meta": {
+            "body": "Hey {{contact.first_name}} - you're booked for {{appointment.start_time}} ({{appointment.timezone}}). Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
       "_id": "wf_cs_listblast",
       "name": "Compliance SMS - Purchased List Blast",
       "status": "published",
@@ -3000,7 +3033,10 @@
     },
     {
       "id": "CVokAlI8fgw4WYWoCtQz",
-      "name": "Calendar Booking Demo - Strategy Call"
+      "name": "Calendar Booking Demo - Strategy Call",
+      "autoConfirm": true,
+      "formSubmitType": "ThankYouMessage",
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{contactMethod}} if you have any questions."
     }
   ],
   "users": [

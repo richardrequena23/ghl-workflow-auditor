@@ -11,7 +11,7 @@
       "workflows": 13
     },
     "requena-live-sep03": {
-      "findings": 38,
+      "findings": 39,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-03.json",
       "workflows": 13
     }
@@ -744,6 +744,16 @@
       "title": "External call with no error branch \u2014 a failure is silently skipped",
       "verdict": "real",
       "workflow": "Lead Source Attribution & Reporting"
+    },
+    "52729651088a96ac": {
+      "account": "requena-live-sep03",
+      "note": "Verified Sep-03 2026 by hand against the bundle before the rule was written: calendar Qie7VNcnTSYhyXY3gPdz 'Strategy Call' has autoConfirm=true, formSubmitType='ThankYouMessage' and the stock text 'Thank you for your appointment request. We will contact you shortly to confirm your request\u2026'; 'Strategy Call - Booking & Confirmation v2' (published) triggers on calendar.id==that id AND appointment.status==confirmed, and its first outbound 'Confirmation SMS' reads \"you're booked for {{appointment.start_time}}\". The screen and the text contradict each other on the account's only calendar. Confirmed by 3 adversarial refuters in the Sep-03 recall sweep (wf_4672d25b-25d) before shipping as GHL103.",
+      "rule": "GHL103",
+      "severity": "medium",
+      "step": "calendar 'Strategy Call'",
+      "title": "The 'Strategy Call' booking screen says \"we'll confirm\" \u2014 the calendar already did, and 'Confirmation SMS' says so",
+      "verdict": "real",
+      "workflow": "Strategy Call - Booking & Confirmation v2"
     },
     "52cf97c8add7b1cd": {
       "account": "account-bundle-2026-09-01",

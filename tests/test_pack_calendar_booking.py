@@ -1,4 +1,4 @@
-"""Calendar and booking pack — GHL065-GHL070.
+"""Calendar and booking pack — GHL065-GHL070 and GHL103.
 
 Every check here fires on a broken booking lane and stays quiet on a correct
 one. The quiet half is the important half: an account's booking workflows are
@@ -28,7 +28,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FRAGMENT = os.path.join(HERE, "..", "examples", "packs", "calendar_booking.json")
 BASE = os.path.join(HERE, "..", "examples", "base-account.json")
 
-MINE = {"GHL065", "GHL066", "GHL067", "GHL068", "GHL069", "GHL070"}
+MINE = {"GHL065", "GHL066", "GHL067", "GHL068", "GHL069", "GHL070",
+        "GHL103"}
 
 # HighLevel object ids are base62 and about twenty characters long, with no
 # separators. The pack only judges a booking link whose token looks like one,
@@ -1430,3 +1431,128 @@ class Fragment(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+STOCK_THANKS = ("Thank you for your appointment request. We will contact you "
+                "shortly to confirm your request. Please call our office at "
+                "{{contactMethod}} if you have any questions.")
+
+
+def calendar(auto_confirm=True, kind="ThankYouMessage", message=STOCK_THANKS,
+             cal_id=LIVE_CAL, **extra):
+    rec = {"id": cal_id, "name": "Strategy Call", "autoConfirm": auto_confirm,
+           "formSubmitType": kind, "formSubmitThanksMessage": message}
+    rec.update(extra)
+    return rec
+
+
+def confirmed_on(cal_id=LIVE_CAL, status="confirmed"):
+    """The live export's shape: an appointment trigger filtered to one calendar
+    and one status."""
+    return {"type": "appointment", "name": "Booked", "conditions": [
+        {"operator": "==", "field": "calendar.id", "value": cal_id},
+        {"operator": "==", "field": "appointment.status", "value": status}]}
+
+
+def confirmer(body="Hey {{contact.first_name}} - you're booked for "
+                   "{{appointment.start_time}}.", cal_id=LIVE_CAL,
+              status="published"):
+    return wf("Booking Confirmation", [sms("Confirmation SMS", body)],
+              triggers=[confirmed_on(cal_id)], status=status)
+
+
+class ThankYouScreenContradictsAutoConfirm(unittest.TestCase):
+    """GHL103 — the screen says 'we'll confirm'; the calendar and the text
+    already did."""
+
+    def test_the_stock_screen_on_an_auto_confirm_calendar_is_reported(self):
+        hits = findings_for("GHL103", [confirmer()], calendars=[calendar()])
+        self.assertEqual([f.severity for f in hits], ["medium"])
+        self.assertEqual(hits[0].workflow, "Booking Confirmation")
+        self.assertIn("We will contact you shortly to confirm your request",
+                      hits[0].symptom)
+        self.assertIn("Strategy Call", hits[0].step)
+
+    def test_a_request_calendar_may_say_it_will_confirm(self):
+        self.assertEqual(findings_for(
+            "GHL103", [confirmer()],
+            calendars=[calendar(auto_confirm=False)]), [])
+
+    def test_a_redirect_never_shows_the_message(self):
+        self.assertEqual(findings_for(
+            "GHL103", [confirmer()],
+            calendars=[calendar(kind="RedirectURL")]), [])
+
+    def test_a_screen_that_confirms_is_fine(self):
+        self.assertEqual(findings_for(
+            "GHL103", [confirmer()],
+            calendars=[calendar(message="You're booked! Check your phone for "
+                                        "the details and we'll see you then.")]),
+            [])
+
+    def test_stock_copy_alone_is_not_a_contradiction(self):
+        """No workflow tells the contact otherwise — maybe the office really
+        does confirm by hand. Out of scope, and it stays quiet."""
+        self.assertEqual(findings_for(
+            "GHL103", [wf("Reminders", [sms("24h", "Quick reminder for "
+                                            "tomorrow.")],
+                          triggers=[confirmed_on()])],
+            calendars=[calendar()]), [])
+
+    def test_the_confirming_workflow_must_be_on_this_calendar(self):
+        self.assertEqual(findings_for(
+            "GHL103", [confirmer(cal_id=DEAD_CAL)],
+            calendars=[calendar()]), [])
+
+    def test_a_draft_confirmer_does_not_count(self):
+        self.assertEqual(findings_for(
+            "GHL103", [confirmer(status="draft")],
+            calendars=[calendar()]), [])
+
+    def test_the_confirming_copy_has_to_open_the_workflow(self):
+        """A 'you're booked' line buried after a reminder is a different
+        lane; the contradiction is between the screen and the FIRST touch."""
+        flow = wf("Booking Confirmation",
+                  [sms("Heads up", "Quick note - I'll call you at this "
+                                   "number."),
+                   sms("Later", "Reminder - you're booked for tomorrow.")],
+                  triggers=[confirmed_on()])
+        self.assertEqual(findings_for("GHL103", [flow],
+                                      calendars=[calendar()]), [])
+
+    def test_no_calendar_list_reports_a_skip(self):
+        self.assertIn("GHL103", skips_hit([confirmer()]))
+
+    def test_no_calendar_list_and_no_confirmer_is_silent(self):
+        findings, skips = audit_all([wf("Welcome", [sms()])])
+        self.assertNotIn("GHL103", {s.rule for s in skips})
+        self.assertNotIn("GHL103", {f.rule for f in findings})
+
+    def test_ids_and_names_only_reports_a_skip(self):
+        self.assertIn("GHL103", skips_hit([confirmer()], calendars=CALENDARS))
+
+    def test_ids_and_names_only_with_no_confirmer_is_silent(self):
+        self.assertNotIn("GHL103", skips_hit([wf("Welcome", [sms()])],
+                                             calendars=CALENDARS))
+
+    def test_the_settings_can_be_missing_on_one_calendar_only(self):
+        """A second calendar exported bare is not a hole in the first."""
+        hits = findings_for(
+            "GHL103", [confirmer()],
+            calendars=[calendar(), {"id": DEAD_CAL, "name": "Discovery"}])
+        self.assertEqual(len(hits), 1)
+
+    def test_a_dict_shaped_calendar_export_reads_the_same(self):
+        hits = findings_for(
+            "GHL103", [confirmer()],
+            calendars={LIVE_CAL: calendar()})
+        self.assertEqual(len(hits), 1)
+
+    def test_the_message_is_sentence_scoped(self):
+        """'confirm' in one sentence and 'request' in another is not the
+        promise — a confirmation screen can mention a request form."""
+        msg = ("You're confirmed for your call. Fill in the intake request "
+               "before we speak.")
+        self.assertEqual(findings_for(
+            "GHL103", [confirmer()],
+            calendars=[calendar(message=msg)]), [])
