@@ -365,6 +365,24 @@ def summary(live: bool = False) -> int:
     label = "LIVE" if live else "OVERALL"
     print(f"\n{label}: {fp} false positives in {n} judged findings — {pct:.1f}%")
 
+    # How many accounts is that rate actually standing on? A clean number
+    # measured over one account is a statement about one account, and the
+    # temptation to quote it as the catalog's rate is exactly what this whole
+    # script exists to resist. Two exports OF THE SAME LOCATION two days apart
+    # are one account's worth of evidence wearing two labels, and nothing in
+    # the ledger can tell that from two genuinely different businesses — so
+    # this reports the spread and lets the reader judge it.
+    spread = defaultdict(int)
+    for r in judged:
+        spread[r["account"]] += 1
+    print(f"   across {len(spread)} export(s): "
+          + ", ".join(f"{a} ({c})" for a, c in sorted(spread.items())))
+    if len(spread) < 3:
+        print("   ⚠️  This rests on very few exports. It is a statement about "
+              "these accounts, not about the catalog. Two exports of the SAME "
+              "location are one account's evidence under two labels — check "
+              "before quoting this anywhere a client can see it.")
+
     if live and retired:
         judged_retired = [r for r in retired.values() if r.get("verdict")]
         fixed = [r for r in judged_retired if r["verdict"] == "false_positive"]

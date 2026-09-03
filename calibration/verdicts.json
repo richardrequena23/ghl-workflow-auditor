@@ -9,6 +9,11 @@
       "findings": 83,
       "path": "/private/tmp/claude-501/-Users-richardrequena-Documents-CLOSE-CRM/392f0d60-6ecf-4f43-a614-041329042772/scratchpad/live-bundle-2026-08-26-1834.json",
       "workflows": 13
+    },
+    "requena-live-sep03": {
+      "findings": 36,
+      "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-03.json",
+      "workflows": 13
     }
   },
   "verdicts": {
@@ -21,6 +26,16 @@
       "title": "'create_opportunity' is deprecated",
       "verdict": "false_positive",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "024cec0ddec25f16": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 'Strategy Call - Booking & Confirmation v2' removes contacts from Speed to Lead, Dead Lead Reactivation and No Show Recovery \u2014 NOT from Missed Call Text Back. It only clears the missed-call-no-response TAG. Real.",
+      "rule": "GHL096",
+      "severity": "high",
+      "step": "",
+      "title": "'Strategy Call - Booking & Confirmation v2' pulls contacts out of the other cadences on a conversion \u2014 and not out of this one",
+      "verdict": "real",
+      "workflow": "Missed Call Text Back"
     },
     "02f7e4dd293f073d": {
       "account": "account-bundle-2026-09-01",
@@ -50,6 +65,16 @@
       "title": "Greeting renders as 'Hey ,' when first_name is empty",
       "verdict": "real",
       "workflow": "Missed Call Text Back"
+    },
+    "03b19de90fe2dc9a": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: both custom values still carry REPLACE-WITH-CLIENT placeholder text. Real.",
+      "rule": "GHL008",
+      "severity": "high",
+      "step": "Integration Webhook URL",
+      "title": "Custom value 'Integration Webhook URL' is still a placeholder",
+      "verdict": "real",
+      "workflow": "(custom values)"
     },
     "04b7463dad12dd9d": {
       "account": "account-bundle-2026-09-01",
@@ -121,6 +146,16 @@
       "verdict": "false_positive",
       "workflow": "Referral Request - Two Asks, Then Stop"
     },
+    "0fa80798f9e11afb": {
+      "account": "requena-live-sep03",
+      "note": "Verified fresh Sep-03 2026 against account-bundle-2026-09-03. Published: yes. Sends exactly 2 messages (1 email + 1 SMS). Its ONLY trigger is contact_tag_added on 'job-complete'. That tag is added by nothing in the account \u2014 48 tags are written by some workflow and 'job-complete' is not among them \u2014 and the string appears nowhere in any workflow's text, so no branch reads it and no message mentions it. The rule's 'appears nowhere else' test is satisfied exactly. This is the reworded version of the Sep-01 finding (was 'No workflow in this account adds job-complete'), re-verified rather than carried. Still open with Richard: build a source for the tag, or declare it external via the external_tags config.",
+      "rule": "GHL018",
+      "severity": "high",
+      "step": "",
+      "title": "Published, sends 2 messages, and the only way in is 'job-complete' \u2014 which nothing here adds",
+      "verdict": "real",
+      "workflow": "Review Request After Close"
+    },
     "114d5f1c68c6b1c8": {
       "account": "requena-live-aug26",
       "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. This workflow's two sends fire back to back with no wait between them (booking link by SMS and by email), so there is no window in which a reply could arrive \u2014 and the symptom text described a 'day-2 follow-up' the workflow does not have. Reply Handler is additionally triggered BY a reply. The rule counted outbound steps and never checked for a pause between them. FIXED: GHL003 now requires Workflow.sends_across_a_wait().",
@@ -130,6 +165,26 @@
       "title": "2 outbound messages, nothing listening for a reply",
       "verdict": "false_positive",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "11b132d6e8ae338d": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: the prompt interpolates {{message.body}} inline with its instructions, unfenced. Real, and serious.",
+      "rule": "GHL077",
+      "severity": "high",
+      "step": "AI - Score This Lead",
+      "title": "The contact's own words are pasted into the prompt as instructions",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "11d4f340136c846f": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - WARM",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
     "125de54ea1b5ab92": {
       "account": "account-bundle-2026-09-01",
@@ -171,6 +226,16 @@
       "verdict": "real",
       "workflow": "Lead Source Attribution & Reporting"
     },
+    "154c955e6489d735": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Backup email",
+      "title": "2 marketing emails with no unsubscribe link",
+      "verdict": "real",
+      "workflow": "Speed to Lead - 5 Minute Response"
+    },
     "170623148e46849d": {
       "account": "requena-live-aug26",
       "note": "Verified Sep-02 2026: 4 internal_notification steps and no guard tag in the workflow. Real.",
@@ -209,6 +274,16 @@
       "title": "External call with no error branch \u2014 a failure is silently skipped",
       "verdict": "real",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "1a5d98099107efdc": {
+      "account": "requena-live-sep03",
+      "note": "Verified fresh Sep-03 2026 against account-bundle-2026-09-03. Published: yes. Sends exactly 2 messages (1 email + 1 SMS). Its ONLY trigger is contact_tag_added on 'job-complete'. That tag is added by nothing in the account \u2014 48 tags are written by some workflow and 'job-complete' is not among them \u2014 and the string appears nowhere in any workflow's text, so no branch reads it and no message mentions it. The rule's 'appears nowhere else' test is satisfied exactly. This is the reworded version of the Sep-01 finding (was 'No workflow in this account adds job-complete'), re-verified rather than carried. Still open with Richard: build a source for the tag, or declare it external via the external_tags config.",
+      "rule": "GHL018",
+      "severity": "high",
+      "step": "",
+      "title": "Published, sends 2 messages, and the only way in is 'job-complete' \u2014 which nothing here adds",
+      "verdict": "real",
+      "workflow": "Referral Request - Two Asks, Then Stop"
     },
     "1b540f818b4ea434": {
       "account": "requena-live-aug26",
@@ -249,6 +324,16 @@
       "title": "External call with no error branch \u2014 a failure is silently skipped",
       "verdict": "real",
       "workflow": "Lead Source Attribution & Reporting"
+    },
+    "1e6677ae9880f4ec": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: the suppression If/Else runs once at the top and never again before the second send, which sits days later. Real.",
+      "rule": "GHL010",
+      "severity": "medium",
+      "step": "Ask 2 - one line nudge",
+      "title": "Suppression tags are checked before the wait, never after",
+      "verdict": "real",
+      "workflow": "Referral Request - Two Asks, Then Stop"
     },
     "1e6bb5e18781e8c4": {
       "account": "account-bundle-2026-09-01",
@@ -300,6 +385,26 @@
       "verdict": "false_positive",
       "workflow": "No Show Recovery"
     },
+    "2359232245189128": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Conditions really are nested 4 deep in both workflows. A fair maintainability call at 'medium'.",
+      "rule": "GHL094",
+      "severity": "medium",
+      "step": "Did they rebook? > Not yet > Rebooked by now? > Rebooked",
+      "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+      "verdict": "real",
+      "workflow": "No Show Recovery"
+    },
+    "237913d49a12302a": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "AI - Score This Lead",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
     "252f40db94f1f987": {
       "account": "requena-live-aug26",
       "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
@@ -340,6 +445,26 @@
       "verdict": "real",
       "workflow": "Review Request After Close"
     },
+    "28c73a3da47f21ce": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: both flagged paths are genuinely four conditions deep. Real.",
+      "rule": "GHL094",
+      "severity": "medium",
+      "step": "Where are they in the journey? > Live lead - AI reads the reply > Route by reply intent > BOOKING - they want a time",
+      "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "299cad936f05e318": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: 'Review Link' custom value is still the literal placeholder.",
+      "rule": "GHL008",
+      "severity": "high",
+      "step": "Review Link",
+      "title": "Custom value 'Review Link' is still a placeholder",
+      "verdict": "real",
+      "workflow": "(custom values)"
+    },
     "2d0008064f90afd7": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: both flagged paths are genuinely four conditions deep. Real.",
@@ -349,6 +474,16 @@
       "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
       "verdict": "real",
       "workflow": "No Show Recovery"
+    },
+    "2d7d6d1c5b8494af": {
+      "account": "requena-live-sep03",
+      "note": "Verified fresh Sep-03 2026. email_domains supplied and empty, hasLcEmail=true, domain='', defaultEmailService='' \u2014 the account has no dedicated sending domain and sends through LeadConnector. 10 published workflows send 18 emails. The finding is the corrected medium ('shared domain, no domain of its own'), NOT the old high claim that the mail is unauthenticated: HighLevel's own docs say DMARC is not required to send from the shared LeadConnector domains, which is only coherent because LC authenticates them itself. What the account really lacks is From-alignment with its own domain and control of its own reputation. Accurate at medium.",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "LeadConnector shared sending",
+      "title": "Sending on LeadConnector's shared domain, with no domain of its own",
+      "verdict": "real",
+      "workflow": "(account)"
     },
     "305b5cfbc3709ebd": {
       "account": "account-bundle-2026-09-01",
@@ -380,6 +515,26 @@
       "verdict": "real",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
+    "3266eb669d407a1a": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - HOT",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "32bda564aae514d0": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 8 workflows each create their own opportunity on one pipeline. Real.",
+      "rule": "GHL039",
+      "severity": "medium",
+      "step": "Dead Lead Reactivation, Lead Source Attribution & Reporting, Missed Call Text Back, No Show Recovery, Reply Handler - Route, Stop Nurture, Alert, Speed to Lead - 5 Minute Response, Strategy Call - Booking & Confirmation v2",
+      "title": "8 workflows each create an opportunity on 'Coaching Sales Pipeline'",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
     "34be51a40d76d580": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
@@ -389,6 +544,16 @@
       "title": "External call with no error branch \u2014 a failure is silently skipped",
       "verdict": "real",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "351e79d6dfcd5a1c": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Google Ads",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Lead Source Attribution & Reporting"
     },
     "3629ef9383bad4bf": {
       "account": "account-bundle-2026-09-01",
@@ -419,6 +584,16 @@
       "title": "1 marketing email with no unsubscribe link",
       "verdict": "real",
       "workflow": "Referral Request - Two Asks, Then Stop"
+    },
+    "3c2f91ab2b2e3f19": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 'Strategy Call - Booking & Confirmation v2' has 6 sends separated by appointment-anchored waits and no reply release of its own. It now reports as the LOW 'reply handling is delegated \u2014 confirm this workflow is in the listener's remove list' variant, which is a fair confirm-this rather than a defect claim. Real at that severity.",
+      "rule": "GHL003",
+      "severity": "low",
+      "step": "",
+      "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
+      "verdict": "real",
+      "workflow": "Strategy Call - Booking & Confirmation v2"
     },
     "3f1579742bd53626": {
       "account": "requena-live-aug26",
@@ -490,6 +665,16 @@
       "verdict": "false_positive",
       "workflow": "Strategy Call - Booking & Confirmation v2"
     },
+    "462714428f478c6d": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Confirmed independently: the sub-account genuinely has no SMS-capable number (his own notes record the same A2P blocker). Every SMS step fails silently.",
+      "rule": "GHL031",
+      "severity": "critical",
+      "step": "10 workflows send SMS",
+      "title": "No SMS-capable number in the location \u2014 every SMS step fails silently",
+      "verdict": "real",
+      "workflow": "(account)"
+    },
     "47446da89b1e0797": {
       "account": "requena-live-aug26",
       "note": "'Strategy Call Appointment Workflow' is complete and sitting in draft.",
@@ -530,6 +715,16 @@
       "verdict": "real",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
+    "4f3936d851519c70": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Other Tracked Source",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Lead Source Attribution & Reporting"
+    },
     "52cf97c8add7b1cd": {
       "account": "account-bundle-2026-09-01",
       "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. GHL049 matched AI_STEP_TYPE against the step NAME as well as the type, with no corroboration, so any step a builder named after the thing it routes on was read as a model call. These five are an If/Else ('Route by AI score', 'Live lead - AI reads the reply') and three add_contact_tag steps ('Tag as ai-hot/warm/cold'). None of them calls a model; the account has exactly two AI steps, both typed 'chatgpt', and both are still reported. The ai_safety pack had already solved this \u2014 a matching TYPE is proof, a matching NAME is a hint that must be backed by a prompt or model setting \u2014 but GHL049 predates that pack and never got the discipline. The helper is now canonical in rules.py and the pack imports it, so there is one definition instead of two that can drift.",
@@ -538,6 +733,16 @@
       "title": "A branch routes on AI output that nothing constrains",
       "verdict": "false_positive",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "5504d73ab0203a5c": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - YouTube Ads",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Lead Source Attribution & Reporting"
     },
     "572ac0873b0a0aa2": {
       "account": "requena-live-aug26",
@@ -549,6 +754,16 @@
       "verdict": "real",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
+    "581a04c7f7fdcf00": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - REVIEW",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
     "61e4b5eb2c718587": {
       "account": "account-bundle-2026-09-01",
       "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, rule rewritten. GHL049 matched AI_STEP_TYPE against the step NAME as well as the type, with no corroboration, so any step a builder named after the thing it routes on was read as a model call. These five are an If/Else ('Route by AI score', 'Live lead - AI reads the reply') and three add_contact_tag steps ('Tag as ai-hot/warm/cold'). None of them calls a model; the account has exactly two AI steps, both typed 'chatgpt', and both are still reported. The ai_safety pack had already solved this \u2014 a matching TYPE is proof, a matching NAME is a hint that must be backed by a prompt or model setting \u2014 but GHL049 predates that pack and never got the discipline. The helper is now canonical in rules.py and the pack imports it, so there is one definition instead of two that can drift.",
@@ -557,6 +772,16 @@
       "title": "A branch routes on AI output that nothing constrains",
       "verdict": "false_positive",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "642a87ee7608b546": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: the suppression If/Else runs once at the top and never again before the second send, which sits days later. Real.",
+      "rule": "GHL010",
+      "severity": "medium",
+      "step": "Nudge with the link",
+      "title": "Suppression tags are checked before the wait, never after",
+      "verdict": "real",
+      "workflow": "Review Request After Close"
     },
     "64550cd093097126": {
       "account": "account-bundle-2026-09-01",
@@ -617,6 +842,16 @@
       "title": "'create_opportunity' is deprecated",
       "verdict": "false_positive",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "71b61c57058d5f1a": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 4 internal_notification steps and no guard tag in the workflow. Real.",
+      "rule": "GHL009",
+      "severity": "medium",
+      "step": "",
+      "title": "4 internal alerts with no guard tag",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
     "7222e42debc9d558": {
       "account": "account-bundle-2026-09-01",
@@ -707,6 +942,16 @@
       "verdict": "false_positive",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
+    "8199ec894a62e7de": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: the prompt interpolates {{message.body}} inline with its instructions, unfenced. Real, and serious.",
+      "rule": "GHL077",
+      "severity": "high",
+      "step": "AI - Classify This Reply",
+      "title": "The contact's own words are pasted into the prompt as instructions",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
     "8313000bb3ab8a0d": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
@@ -737,6 +982,16 @@
       "verdict": "false_positive",
       "workflow": "Speed to Lead - 5 Minute Response"
     },
+    "87eb40a355a6ff75": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: 'Strategy Call Appointment Workflow' is complete and sitting in draft.",
+      "rule": "GHL037",
+      "severity": "medium",
+      "step": "",
+      "title": "Complete workflow, configured trigger \u2014 never published",
+      "verdict": "real",
+      "workflow": "Strategy Call Appointment Workflow"
+    },
     "88890f541b940b41": {
       "account": "requena-live-aug26",
       "note": "Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
@@ -744,6 +999,16 @@
       "severity": "high",
       "step": "Live lead - AI reads the reply",
       "title": "A branch routes on AI output that nothing constrains",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "8b20a2d52ea7b3fb": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - replied",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
       "verdict": "real",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
@@ -1077,6 +1342,16 @@
       "verdict": "real",
       "workflow": "(custom values)"
     },
+    "bd376324e6de906e": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 10 workflows send email and the account has no bounce/complaint handler. Real.",
+      "rule": "GHL061",
+      "severity": "high",
+      "step": "AI Lead Qualification - Score, Route & Sync, Appointment Cancelled - Clean Up & One Rebook Ask, Dead Lead Reactivation, +7 more",
+      "title": "10 workflows send email and nothing handles a bounce or a complaint",
+      "verdict": "real",
+      "workflow": "(account)"
+    },
     "be79829b399c1cd7": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
@@ -1086,6 +1361,26 @@
       "title": "Greeting renders as 'Hey ,' when first_name is empty",
       "verdict": "real",
       "workflow": "No Show Recovery"
+    },
+    "bfd62e64cc86639e": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Booking nudge email",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "c320a27015bc3f7a": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: both workflows genuinely trigger on tag_added 'job-complete'. The high-severity collision is real; only the 'identical copies' critical was wrong (see the corrected entry).",
+      "rule": "GHL015",
+      "severity": "high",
+      "step": "Review Request After Close",
+      "title": "2 workflows fire on the same 'tag_added' event with equivalent filters",
+      "verdict": "real",
+      "workflow": "Referral Request - Two Asks, Then Stop"
     },
     "c49c32aed2b7a972": {
       "account": "account-bundle-2026-09-01",
@@ -1207,6 +1502,16 @@
       "verdict": "real",
       "workflow": "Referral Request - Two Asks, Then Stop"
     },
+    "d6b225e4e738e734": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Sync verdict - COLD",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
     "d8755a85e0e38c97": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: 'Last touch' sits behind an unbounded reply-wait, which really can resume at any hour, and the workflow carries no send window. Real \u2014 this is the shape the rule exists for, as distinct from the one-minute speed-to-lead hold that was the false positive.",
@@ -1216,6 +1521,16 @@
       "title": "1 message can fire at any hour of the night",
       "verdict": "real",
       "workflow": "Missed Call Text Back"
+    },
+    "dab19fa40178d78b": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - cancelled",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Appointment Cancelled - Clean Up & One Rebook Ask"
     },
     "dca2c3d39f742991": {
       "account": "requena-live-aug26",
@@ -1256,6 +1571,26 @@
       "title": "Opening text arrives from an unknown number with no business name in it",
       "verdict": "real",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "e15e15e9868fd630": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Direct / Unknown",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "e1b1c615f06f9403": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'requena-live-aug26' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 'AI - Score This Lead' is a free-text prompt (gpt-4o, temp 0.2) and 'Route by AI score' matches with the CONTAIN operator against a free-text field. Nothing constrains the answer to HOT/WARM/COLD. Real, and the most valuable fix on the account.",
+      "rule": "GHL049",
+      "severity": "high",
+      "step": "AI - Classify This Reply",
+      "title": "A branch routes on AI output that nothing constrains",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
     "e3cd5587c67e1881": {
       "account": "account-bundle-2026-09-01",
@@ -1317,12 +1652,42 @@
       "verdict": "real",
       "workflow": "(account)"
     },
+    "ebd627fc280b78ad": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: a genuine marketing send with no unsubscribe token in the body and no account-level default visible in the bundle. Not covered by the transactional exemption \u2014 these are chases and nurture sequences, not reservation confirmations. Real.",
+      "rule": "GHL025",
+      "severity": "medium",
+      "step": "Send the booking link by email",
+      "title": "1 marketing email with no unsubscribe link",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
     "ec668bce74570207": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
       "rule": "GHL041",
       "severity": "high",
       "step": "Push to integrations - Direct / Unknown",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Lead Source Attribution & Reporting"
+    },
+    "eed69f2d11c687b8": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - booked",
+      "title": "External call with no error branch \u2014 a failure is silently skipped",
+      "verdict": "real",
+      "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "ef7c90c47964f48e": {
+      "account": "requena-live-sep03",
+      "note": "Carried Sep-03 2026 from the adjudication of the identical finding on 'account-bundle-2026-09-01' \u2014 same rule, workflow, step AND title, so the claim being judged is the same claim, on the same account two days later. Original verdict 'real'. Original note: Verified Sep-02 2026: 13 webhook steps, none followed by any error handling. Real.",
+      "rule": "GHL041",
+      "severity": "high",
+      "step": "Push to integrations - Facebook Ads",
       "title": "External call with no error branch \u2014 a failure is silently skipped",
       "verdict": "real",
       "workflow": "Lead Source Attribution & Reporting"

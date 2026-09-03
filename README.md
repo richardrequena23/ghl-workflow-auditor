@@ -360,7 +360,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,065 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,067 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
@@ -383,9 +383,26 @@ hand, one at a time, against the raw export**. The ledger is
 marked `real` or `false_positive`, with a note saying why. `scripts/precision_report.py
 --summary` re-derives the number from it.
 
-**145 findings judged, 39 false positives — 26.9%.** Nothing is unjudged; an unjudged
-finding is never counted as a pass, for the same reason the auditor reports a skipped
-check instead of silently omitting it.
+**Two numbers, and the difference between them is the point.**
+
+| | judged | false positives | rate |
+|---|---|---|---|
+| **Live** — what the catalog emits today (`--summary --live`) | 88 | **0** | **0.0%** |
+| Lifetime — every finding ever recorded, including ones no longer emitted | 181 | 39 | 21.5% |
+
+The lifetime figure is a history of this catalog's mistakes, not a description of it. It
+counts GHL007's twenty-two false positives, which were diagnosed, rewritten, and now fire
+zero times. For an afternoon the summary rated only that history, so correcting the single
+noisiest rule in the catalog moved the headline by exactly nothing — a quality metric that
+cannot observe a fix landing is measuring the past. `--summary --live` re-runs the catalog
+over each recorded export and rates only what it still emits.
+
+Nothing is unjudged; an unjudged finding is never counted as a pass, for the same reason
+the auditor reports a skipped check instead of silently omitting it. Retired findings are
+reported rather than dropped, split by whether they were judged false — the narrowing
+worked — or judged **real**, which means a rule went quiet on a true problem. That second
+bucket is a regression check, and it earned itself: it caught GHL025 exempting a published
+cold-chase from CAN-SPAM because a form submission looked transactional.
 
 That number is worse than the one that stood here for an afternoon, and the difference is
 the whole argument for measuring. The first pass scored 8.3% because GHL007's twenty-two
@@ -424,8 +441,11 @@ A catalog that contradicts itself in public loses the client's trust in all hund
 not the two.
 
 One account is a start and not a calibration set. The rate above is honest about what it
-covers: 145 findings on one real export, judged by one person. It is not a population
-statistic and no copy may present it as one.
+covers: **two exports of the same 13-workflow location, two days apart, judged by one
+person.** That is one account's worth of evidence wearing two labels, and `--summary
+--live` now prints that spread and says so rather than letting the clean number speak for
+itself. A third export of the same account would not fix it; a different business would.
+It is not a population statistic and no copy may present it as one.
 
 **[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 100 checks with the
 symptom, the fix and what each one costs. It is generated from a real run against the
