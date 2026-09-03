@@ -89,6 +89,37 @@ def key_of(account: str, f) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
+def soft_key_of(account: str, f) -> str:
+    """The same identity, minus the title — what the finding is ABOUT.
+
+    `key_of` includes the title, which makes a verdict brittle in one specific
+    and very common way: rewording a finding orphans its judgement. GHL018 is
+    the worked example. The rule kept firing on exactly the same three
+    workflows for exactly the same reason, but its wording went from "No
+    workflow in this account adds 'ai-qualify'" to "Published, sends 2
+    messages, and the only way in is 'ai-qualify'" — and every verdict
+    attached to the old sentence was stranded, so the ledger read three
+    genuine findings as having gone silent.
+
+    That is worse than a bookkeeping nuisance. This catalog improves partly by
+    rewriting findings until they say something an owner can act on, and a
+    ledger that punishes rewording quietly argues against doing it.
+
+    Titles change; a rule firing on a given step of a given workflow is the
+    stable fact. This key is deliberately NOT used to store verdicts — only to
+    find a stranded one, and only when exactly one candidate matches, because
+    two rules can in principle report twice on the same step.
+    """
+    raw = "|".join([account, f.rule, f.workflow, f.step or ""])
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
+def soft_key_of_row(key_account: str, row: dict) -> str:
+    raw = "|".join([key_account, row["rule"], row.get("workflow") or "",
+                    row.get("step") or ""])
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
 def load_ledger() -> dict:
     if not os.path.exists(LEDGER):
         return {"accounts": {}, "verdicts": {}}
@@ -136,16 +167,34 @@ def run(path: str, label: str, record: bool) -> int:
 
     print(f"{'RULE':8} {'WAVE':12} {'SEV':9} {'HITS':>5}  STATUS")
     print("-" * 76)
+    # Judged-ness has to be counted against THIS run's findings. Counting every
+    # ledger row for the rule instead printed things like "3/1 judged", a
+    # verdict count measured against a different denominator, which reads as a
+    # bug in the ledger when it is a bug in the sum.
     for r in sorted(RULES, key=lambda r: r.id):
-        hits = len(by_rule.get(r.id, []))
-        if r.id in skipped:
+        mine = by_rule.get(r.id, [])
+        hits = len(mine)
+        exact = {key_of(label, f) for f in mine}
+        soft = {soft_key_of(label, f) for f in mine}
+        judged = sum(1 for k, v in ledger["verdicts"].items()
+                     if v.get("verdict")
+                     and (k in exact
+                          or (v["rule"] == r.id
+                              and soft_key_of_row(v["account"], v) in soft)))
+        judged = min(judged, hits)
+
+        if hits and r.id in skipped:
+            # A rule can report on what it could see AND declare a dimension
+            # unknown — GHL025 reads every email body, then says it cannot know
+            # the account's sending-domain state. Printing that as "SKIPPED"
+            # hid seven real findings behind a label that says it did nothing.
+            status = (f"PARTIAL — {judged}/{hits} judged, and one dimension "
+                      f"needs context this export lacks")
+        elif r.id in skipped:
             status = "SKIPPED — needs account context this export lacks"
         elif hits == 0:
             status = "clean"
         else:
-            judged = sum(1 for v in ledger["verdicts"].values()
-                         if v["rule"] == r.id and v["account"] == label
-                         and v["verdict"])
             status = f"{judged}/{hits} judged" if judged else "UNJUDGED"
         print(f"{r.id:8} {wave(r.id):12} {r.severity:9} {hits:>5}  {status}")
 
@@ -164,20 +213,113 @@ def run(path: str, label: str, record: bool) -> int:
     return 0
 
 
-def summary() -> int:
+def _current_keys(ledger: dict):
+    """Re-run the catalog over every recorded export, and key what it emits NOW.
+
+    The ledger is a record of judgements. The catalog is a thing that keeps
+    changing. Those two drift apart the moment a rule is narrowed, and the
+    drift is invisible unless something re-runs the code.
+
+    GHL007 is the worked example. It put 22 false positives into one real
+    report — 56% of every false positive ever recorded here — because it had
+    the vendor's deprecation backwards. It was rewritten and now fires zero
+    times on the same export. The lifetime rate still counted all 22, so the
+    headline number could not tell that the worst rule in the catalog had
+    been fixed. A quality metric that cannot see a fix land is not measuring
+    quality; it is measuring history.
+
+    Returns (live_keys, checked, missing). `missing` is accounts whose export
+    is no longer on disk. They are reported, never assumed either way: one of
+    the two calibration exports lived in a scratch directory and macOS
+    deleted it, and quietly counting its verdicts as still-true — or quietly
+    dropping them — would both be lies of a different sign.
+    """
+    live, soft, checked, missing = set(), set(), [], []
+    for label, meta in sorted(ledger.get("accounts", {}).items()):
+        path = meta.get("path")
+        if not path or not os.path.exists(path):
+            missing.append(label)
+            continue
+        try:
+            acct = Account.from_file(path)
+            findings, _ = run_all(acct)
+        except Exception as exc:                     # a corrupt export is missing
+            print(f"⚠️  {label}: could not re-run ({exc})", file=sys.stderr)
+            missing.append(label)
+            continue
+        for f in findings:
+            live.add(key_of(label, f))
+            soft.add(soft_key_of(label, f))
+        checked.append(label)
+    return live, soft, checked, missing
+
+
+def summary(live: bool = False) -> int:
     ledger = load_ledger()
-    rows = list(ledger["verdicts"].values())
-    if not rows:
+    all_rows = dict(ledger["verdicts"])
+    if not all_rows:
         print("No findings recorded yet. Run:\n"
               "  python3 scripts/precision_report.py <real-export.json> --record")
         return 1
 
-    judged = [r for r in rows if r.get("verdict")]
-    unjudged = len(rows) - len(judged)
+    retired, unverifiable, superseded, missing = {}, {}, {}, []
+    rows = all_rows
+    if live:
+        live_keys, live_soft, checked, missing = _current_keys(ledger)
+        gone = set(missing)
 
-    print(f"{len(rows)} findings recorded across "
-          f"{len(ledger['accounts'])} account(s) · "
-          f"{len(judged)} judged · {unjudged} still unjudged\n")
+        def still_emitted(k, r):
+            # Exact match first; fall back to the title-independent identity so
+            # a reworded finding keeps its verdict instead of reading as a
+            # rule that went silent. See soft_key_of.
+            return (k in live_keys
+                    or soft_key_of_row(r["account"], r) in live_soft)
+
+        unverifiable = {k: r for k, r in all_rows.items()
+                        if r["account"] in gone}
+        emitted = {k: r for k, r in all_rows.items()
+                   if r["account"] not in gone and still_emitted(k, r)}
+
+        # A reworded finding leaves two ledger entries behind — the old
+        # sentence and the new one — and both answer to the same soft key.
+        # Counting both would inflate the denominator and let one judgement
+        # vote twice. Keep the entry the catalog actually emits today.
+        rows, superseded = {}, {}
+        best = {}
+        for k, r in emitted.items():
+            sk = soft_key_of_row(r["account"], r)
+            current = best.get(sk)
+            if current is None or (k in live_keys and current[0] not in live_keys):
+                if current is not None:
+                    superseded[current[0]] = current[1]
+                best[sk] = (k, r)
+            else:
+                superseded[k] = r
+        rows = {k: r for k, r in best.values()}
+
+        retired = {k: r for k, r in all_rows.items()
+                   if not still_emitted(k, r) and r["account"] not in gone}
+        if not rows:
+            print("Nothing in the ledger is still emitted by the current "
+                  "catalog, so there is no live rate to report.")
+            if retired:
+                print(f"{len(retired)} recorded finding(s) are retired — the "
+                      f"rules that produced them no longer fire.")
+            return 1
+
+    values = list(rows.values())
+    judged = [r for r in values if r.get("verdict")]
+    unjudged = len(values) - len(judged)
+
+    if live:
+        print(f"LIVE — the catalog was re-run over {len(missing) + len(checked)} "
+              f"recorded export(s); this rates only what it still emits.\n")
+        print(f"{len(values)} of {len(all_rows)} recorded findings are still "
+              f"emitted · {len(judged)} judged · {unjudged} still unjudged\n")
+    else:
+        print(f"{len(values)} findings recorded across "
+              f"{len(ledger['accounts'])} account(s) · "
+              f"{len(judged)} judged · {unjudged} still unjudged\n")
 
     if not judged:
         print("Nothing judged yet, so there is no rate to report. An unjudged "
@@ -220,7 +362,48 @@ def summary() -> int:
             print(f"  {rid}  {fp}/{n} false")
 
     fp, n, pct = rate(judged)
-    print(f"\nOVERALL: {fp} false positives in {n} judged findings — {pct:.1f}%")
+    label = "LIVE" if live else "OVERALL"
+    print(f"\n{label}: {fp} false positives in {n} judged findings — {pct:.1f}%")
+
+    if live and retired:
+        judged_retired = [r for r in retired.values() if r.get("verdict")]
+        fixed = [r for r in judged_retired if r["verdict"] == "false_positive"]
+        by_rule = defaultdict(int)
+        for r in fixed:
+            by_rule[r["rule"]] += 1
+        print(f"\nRETIRED — {len(retired)} recorded finding(s) are no longer "
+              f"emitted by the current catalog.")
+        if by_rule:
+            print(f"  {len(fixed)} of them were judged false. That is the "
+                  f"narrowing work, and it is why the live rate is lower than "
+                  f"the lifetime one:")
+            for rid, count in sorted(by_rule.items(), key=lambda kv: -kv[1]):
+                print(f"    {rid}  {count} false positive(s) no longer fire")
+        still_real = [r for r in judged_retired if r["verdict"] == "real"]
+        if still_real:
+            print(f"  ⚠️  {len(still_real)} were judged REAL and have stopped "
+                  f"firing. A rule that went quiet on a true problem is a "
+                  f"regression, not a win — check these before celebrating:")
+            gone = defaultdict(int)
+            for r in still_real:
+                gone[r["rule"]] += 1
+            for rid, count in sorted(gone.items(), key=lambda kv: -kv[1]):
+                print(f"    {rid}  {count} real finding(s) no longer reported")
+
+    if live and superseded:
+        print(f"\nSUPERSEDED — {len(superseded)} ledger entry(ies) describe a "
+              f"finding the catalog still reports, but under wording it has "
+              f"since changed. Their verdicts are held by the current entry "
+              f"and are not counted twice. Re-run with --record to fold them "
+              f"in.")
+
+    if live and unverifiable:
+        print(f"\nUNVERIFIABLE — {len(unverifiable)} recorded finding(s) belong "
+              f"to export(s) no longer on disk "
+              f"({', '.join(missing)}). They are neither counted nor "
+              f"dismissed; re-export the account to bring them back into "
+              f"the measurement.")
+
     if unjudged:
         print(f"⚠️  {unjudged} findings are unjudged. This rate covers only what "
               f"has been judged, and must not be quoted as the catalog's rate "
@@ -237,10 +420,15 @@ def main(argv=None) -> int:
                     help="write findings into the ledger for judging")
     ap.add_argument("--summary", action="store_true",
                     help="print the measured rate from the ledger")
+    ap.add_argument("--live", action="store_true",
+                    help="with --summary: re-run the catalog over the recorded "
+                         "exports and rate only the findings it still emits")
     args = ap.parse_args(argv)
 
     if args.summary:
-        return summary()
+        return summary(live=args.live)
+    if args.live:
+        ap.error("--live only means something with --summary")
     if not args.path:
         ap.error("give an export to run, or --summary")
     if os.path.abspath(args.path) == os.path.join(ROOT, "examples",

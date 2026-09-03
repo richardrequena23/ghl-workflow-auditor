@@ -1,193 +1,241 @@
 {
-  "workflows": [
+ "workflows": [
+  {
+   "_id": "rl-vendor-lead-intake",
+   "name": "Revenue Lifecycle Demo - Vendor Lead Intake",
+   "status": "published",
+   "triggers": [
     {
-      "_id": "rl-vendor-lead-intake",
-      "name": "Revenue Lifecycle Demo - Vendor Lead Intake",
-      "status": "published",
-      "triggers": [
-        {
-          "type": "inbound_webhook",
-          "name": "Lead vendor push",
-          "filters": []
-        }
-      ],
-      "steps": [
-        {
-          "type": "wait",
-          "name": "Hold so we don't look automated",
-          "meta": {"delay": "45 minutes"}
-        },
-        {
-          "type": "sms",
-          "name": "First contact",
-          "meta": {
-            "body": "Thanks for your interest - one of the team will be in touch shortly. Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "wait",
-          "name": "Two days",
-          "meta": {"delay": "2 days"}
-        },
-        {
-          "type": "sms",
-          "name": "Second contact",
-          "meta": {
-            "body": "Just checking you got my last message. Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "create_opportunity",
-          "name": "Open a deal for the new lead",
-          "meta": {
-            "pipelineId": "rl_pipe_revenue",
-            "stageId": "rl_stg_new"
-          }
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "rl-consultation-nurture",
-      "name": "Revenue Lifecycle Demo - Consultation Nurture",
-      "status": "published",
-      "triggers": [
-        {
-          "type": "form_submitted",
-          "name": "Consultation request form",
-          "filters": [{"field": "form_id", "value": "rl-consult-request"}]
-        }
-      ],
-      "steps": [
-        {
-          "type": "sms",
-          "name": "Offer a slot",
-          "meta": {
-            "body": "Thanks for the enquiry - book a call here and we'll go through it: {{ custom_values.rl_booking_link }} Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "wait",
-          "name": "Two days",
-          "meta": {"delay": "2 days"}
-        },
-        {
-          "type": "sms",
-          "name": "Second nudge",
-          "meta": {
-            "body": "Still happy to grab a slot for you this week. Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "wait",
-          "name": "Three days",
-          "meta": {"delay": "3 days"}
-        },
-        {
-          "type": "email",
-          "name": "Last touch",
-          "meta": {
-            "subject": "Closing your file",
-            "body": "Haven't heard back, so I'll close this off unless you'd like to pick a time."
-          }
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "rl-chargeback-received",
-      "name": "Revenue Lifecycle Demo - Chargeback Received",
-      "status": "published",
-      "triggers": [
-        {
-          "type": "inbound_webhook",
-          "name": "Stripe chargeback received",
-          "filters": [{"field": "event", "value": "charge.dispute.created"}]
-        }
-      ],
-      "steps": [
-        {
-          "type": "internal_notification",
-          "name": "Tell the owner",
-          "meta": {
-            "body": "Chargeback opened for {{ contact.first_name }} - the bank has taken the payment back."
-          }
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "rl-cancellation-logged",
-      "name": "Revenue Lifecycle Demo - Cancellation Request Logged",
-      "status": "published",
-      "triggers": [
-        {
-          "type": "form_submitted",
-          "name": "Cancellation request form",
-          "filters": [{"field": "form_id", "value": "rl-cancel-request"}]
-        }
-      ],
-      "steps": [
-        {
-          "type": "add_contact_tag",
-          "name": "Mark them cancelled",
-          "meta": {"tag": "cancelled-customer"}
-        },
-        {
-          "type": "internal_notification",
-          "name": "Tell the account manager",
-          "meta": {"body": "{{ contact.first_name }} has asked to cancel."}
-        }
-      ],
-      "settings": {}
-    },
-    {
-      "_id": "rl-annual-renewal-push",
-      "name": "Revenue Lifecycle Demo - Annual Plan Renewal Push",
-      "status": "published",
-      "triggers": [
-        {
-          "type": "order_submitted",
-          "name": "Annual plan purchased",
-          "filters": [{"field": "product", "value": "rl-annual-plan"}]
-        }
-      ],
-      "steps": [
-        {
-          "type": "wait",
-          "name": "Wait until the plan is nearly up",
-          "meta": {"delay": "11 months"}
-        },
-        {
-          "type": "sms",
-          "name": "Renewal nudge",
-          "meta": {
-            "body": "Your plan expires in a couple of weeks - want me to renew it at the same rate? Reply STOP to opt out."
-          }
-        },
-        {
-          "type": "email",
-          "name": "Upgrade offer",
-          "meta": {
-            "subject": "Renew now and upgrade for the same price",
-            "body": "Your plan is up for renewal. Renew this month and we'll upgrade you to the next tier at no extra cost.\n\nRequena Automations, 14 Example Street, Springfield IL 62704. Unsubscribe: {{ contact.unsubscribe_link }}"
-          }
-        }
-      ],
-      "settings": {}
+     "type": "inbound_webhook",
+     "name": "Lead vendor push",
+     "filters": []
     }
-  ],
-  "customValues": {
-    "RL Booking Link": "https://calendar.example-client.com/rl-consult"
+   ],
+   "steps": [
+    {
+     "type": "wait",
+     "name": "Hold so we don't look automated",
+     "meta": {
+      "delay": "45 minutes"
+     }
+    },
+    {
+     "type": "sms",
+     "name": "First contact",
+     "meta": {
+      "body": "Thanks for your interest - one of the team will be in touch shortly. Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "wait",
+     "name": "Two days",
+     "meta": {
+      "delay": "2 days"
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Second contact",
+     "meta": {
+      "body": "Just checking you got my last message. Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "create_opportunity",
+     "name": "Open a deal for the new lead",
+     "meta": {
+      "pipelineId": "rl_pipe_revenue",
+      "stageId": "rl_stg_new"
+     }
+    },
+    {
+     "type": "create_update_opportunity",
+     "name": "Legacy combined opportunity action",
+     "meta": {
+      "pipeline": "Sales",
+      "stage": "New"
+     }
+    }
+   ],
+   "settings": {}
   },
-  "pipelines": [
+  {
+   "_id": "rl-consultation-nurture",
+   "name": "Revenue Lifecycle Demo - Consultation Nurture",
+   "status": "published",
+   "triggers": [
     {
-      "id": "rl_pipe_revenue",
-      "name": "Revenue Lifecycle Demo Pipeline",
-      "stages": [
-        {"id": "rl_stg_new", "name": "New Lead"},
-        {"id": "rl_stg_won", "name": "Closed Won"}
-      ]
+     "type": "form_submitted",
+     "name": "Consultation request form",
+     "filters": [
+      {
+       "field": "form_id",
+       "value": "rl-consult-request"
+      }
+     ]
     }
-  ]
+   ],
+   "steps": [
+    {
+     "type": "sms",
+     "name": "Offer a slot",
+     "meta": {
+      "body": "Thanks for the enquiry - book a call here and we'll go through it: {{ custom_values.rl_booking_link }} Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "wait",
+     "name": "Two days",
+     "meta": {
+      "delay": "2 days"
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Second nudge",
+     "meta": {
+      "body": "Still happy to grab a slot for you this week. Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "wait",
+     "name": "Three days",
+     "meta": {
+      "delay": "3 days"
+     }
+    },
+    {
+     "type": "email",
+     "name": "Last touch",
+     "meta": {
+      "subject": "Closing your file",
+      "body": "Haven't heard back, so I'll close this off unless you'd like to pick a time."
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "rl-chargeback-received",
+   "name": "Revenue Lifecycle Demo - Chargeback Received",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "inbound_webhook",
+     "name": "Stripe chargeback received",
+     "filters": [
+      {
+       "field": "event",
+       "value": "charge.dispute.created"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "internal_notification",
+     "name": "Tell the owner",
+     "meta": {
+      "body": "Chargeback opened for {{ contact.first_name }} - the bank has taken the payment back."
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "rl-cancellation-logged",
+   "name": "Revenue Lifecycle Demo - Cancellation Request Logged",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "form_submitted",
+     "name": "Cancellation request form",
+     "filters": [
+      {
+       "field": "form_id",
+       "value": "rl-cancel-request"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "add_contact_tag",
+     "name": "Mark them cancelled",
+     "meta": {
+      "tag": "cancelled-customer"
+     }
+    },
+    {
+     "type": "internal_notification",
+     "name": "Tell the account manager",
+     "meta": {
+      "body": "{{ contact.first_name }} has asked to cancel."
+     }
+    }
+   ],
+   "settings": {}
+  },
+  {
+   "_id": "rl-annual-renewal-push",
+   "name": "Revenue Lifecycle Demo - Annual Plan Renewal Push",
+   "status": "published",
+   "triggers": [
+    {
+     "type": "order_submitted",
+     "name": "Annual plan purchased",
+     "filters": [
+      {
+       "field": "product",
+       "value": "rl-annual-plan"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "type": "wait",
+     "name": "Wait until the plan is nearly up",
+     "meta": {
+      "delay": "11 months"
+     }
+    },
+    {
+     "type": "sms",
+     "name": "Renewal nudge",
+     "meta": {
+      "body": "Your plan expires in a couple of weeks - want me to renew it at the same rate? Reply STOP to opt out."
+     }
+    },
+    {
+     "type": "email",
+     "name": "Upgrade offer",
+     "meta": {
+      "subject": "Renew now and upgrade for the same price",
+      "body": "Your plan is up for renewal. Renew this month and we'll upgrade you to the next tier at no extra cost.\n\nRequena Automations, 14 Example Street, Springfield IL 62704. Unsubscribe: {{ contact.unsubscribe_link }}"
+     }
+    }
+   ],
+   "settings": {}
+  }
+ ],
+ "customValues": {
+  "RL Booking Link": "https://calendar.example-client.com/rl-consult"
+ },
+ "pipelines": [
+  {
+   "id": "rl_pipe_revenue",
+   "name": "Revenue Lifecycle Demo Pipeline",
+   "stages": [
+    {
+     "id": "rl_stg_new",
+     "name": "New Lead"
+    },
+    {
+     "id": "rl_stg_won",
+     "name": "Closed Won"
+    }
+   ]
+  }
+ ]
 }

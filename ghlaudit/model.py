@@ -106,6 +106,38 @@ def _norm_key(key) -> str:
     return re.sub(r"[^a-z]", "", str(key).lower())
 
 
+_MARKUP = re.compile(r"<[^>]+>")
+
+
+def _message_copy(step) -> str:
+    """The words a recipient would read, normalised for comparison.
+
+    Subject plus body, markup removed, whitespace collapsed, lower-cased. The
+    same message written as HTML and as plain text has to compare equal, and a
+    genuinely different message has to not.
+    """
+    raw = step.raw if isinstance(step.raw, dict) else {}
+    # Exports nest the message under different keys depending on where they
+    # came from: `attributes` in a workflow export, `meta` in a snapshot, and
+    # occasionally flat on the step. Look in all three, nearest first.
+    sources = [raw.get(k) for k in ("attributes", "meta", "data")]
+    sources = [d for d in sources if isinstance(d, dict)] + [raw]
+    parts = []
+    for key in ("subject", "body", "message", "html", "text"):
+        val = next((d[key] for d in sources
+                    if isinstance(d.get(key), str) and d[key].strip()), None)
+        if val:
+            parts.append(val)
+            # body and html are the same message in two encodings; one is
+            # enough, and taking both would let a plain-text-only workflow
+            # differ from its own HTML twin.
+            if key in ("body", "message"):
+                break
+    joined = " ".join(parts)
+    joined = _MARKUP.sub(" ", joined)
+    return re.sub(r"\s+", " ", joined).strip().lower()
+
+
 def _tag_strings(value) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -200,6 +232,35 @@ class Step:
 
         walk(self.raw)
         return "\n".join(out)
+
+    def wait_minutes(self):
+        """How long this wait holds, in minutes. None when it is unbounded.
+
+        A reply-wait with no duration can hold for days, so None means "assume
+        long" — the conservative read for any rule asking whether a send has
+        drifted away from the hour its trigger fired in.
+        """
+        if not self.is_wait:
+            return None
+        raw = self.raw if isinstance(self.raw, dict) else {}
+        # Same nesting problem as the message body: `attributes` in a workflow
+        # export, `meta` in a snapshot, sometimes flat on the step.
+        sources = [raw.get(k) for k in ("attributes", "meta", "data")]
+        sources = [d for d in sources if isinstance(d, dict)] + [raw]
+        after = next((d["startAfter"] for d in sources
+                      if isinstance(d.get("startAfter"), dict)), None)
+        if after is None:
+            return None
+        try:
+            value = float(after.get("value"))
+        except (TypeError, ValueError):
+            return None
+        unit = str(after.get("type", "")).lower()
+        per = {"minutes": 1, "minute": 1, "hours": 60, "hour": 60,
+               "days": 1440, "day": 1440, "weeks": 10080, "week": 10080}
+        if unit not in per:
+            return None
+        return value * per[unit]
 
     def tags_added(self) -> set[str]:
         """Tags this step puts ON a contact. Remove-tag steps return nothing."""
@@ -631,6 +692,28 @@ class Workflow:
     def trigger_signatures(self) -> list:
         return [t.signature() for t in self.triggers]
 
+    def sends_across_a_wait(self) -> bool:
+        """Is there a send, then a pause, then another send?
+
+        The window a reply can arrive in. Two messages fired back to back — an
+        SMS and the same content by email, say — are one touch delivered twice,
+        and no reply can land between them, so a rule about ignoring replies
+        has nothing to bite on. A real account had a reply-triggered workflow
+        whose only two sends went out together flagged for "nothing listening
+        for a reply"; the symptom described a day-2 follow-up the workflow did
+        not have.
+        """
+        seen_send = False
+        waited = False
+        for step in self.steps:
+            if step.is_outbound:
+                if seen_send and waited:
+                    return True
+                seen_send = True
+            elif step.is_wait and seen_send:
+                waited = True
+        return False
+
     def outbound_after(self, index: int) -> list[Step]:
         """Sends that sit below a given step — the size of the leak below it."""
         return [s for s in self.steps[index + 1:] if s.is_outbound]
@@ -653,12 +736,27 @@ class Workflow:
     def shape(self) -> tuple:
         """A structural fingerprint: what this workflow does, ignoring names.
 
-        Two workflows with the same trigger set and the same ordered action
-        types are the same workflow twice — which is what a snapshot re-pushed
-        onto a non-blank sub-account leaves behind.
+        Structure ALONE does not identify a duplicate. Reusing a skeleton is
+        good practice — a referral ask and a review ask are the same twenty
+        steps in the same order and are not the same workflow — so callers that
+        care about duplication must compare `copy_fingerprint()` too. See
+        GHL015, which used to escalate on this alone and told the owner of a
+        working account to unpublish a live campaign.
         """
         return (tuple(sorted(self.trigger_signatures())),
                 tuple(_norm_key(s.type) for s in self.steps))
+
+    def copy_fingerprint(self) -> tuple:
+        """What this workflow actually SAYS, normalised.
+
+        Only the message content of the outbound steps: subject line and body,
+        stripped of markup, case and whitespace. Deliberately not `Step.text()`
+        — that flattens every string in the export including step ids, which
+        differ between two copies of the same workflow and would make a real
+        duplicate look unique. This has to be the other way round: identical
+        for a snapshot re-push, different the moment a human rewrote the copy.
+        """
+        return tuple(_message_copy(s) for s in self.outbound)
 
     def exits(self) -> list[Step]:
         """Steps that pull the contact out of this workflow before the end."""

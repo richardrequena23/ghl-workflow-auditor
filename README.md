@@ -181,9 +181,17 @@ guessed — and drift in either direction is a finding.
   },
   "required_steps": {"Attribution": ["Push to reporting - booked"]},
   "transactional_workflows": ["Receipts"],
+  "external_tags": ["job-complete"],
   "stats_window_days": 90
 }
 ```
+
+`external_tags` is the same idea pointed at a tag rather than a workflow. A tag trigger
+fires on the tag arriving from anywhere, so "no workflow here adds it" is not proof the
+sequence is dead — an ops team may apply it by hand on completion. GHL018 reports a
+published, sending workflow behind an unfed tag at **high**, which is right when the
+add-tag step was never built and wrong when a human applies it. Naming the tag here says
+"we know where it comes from" and the check stops asking.
 
 See [`examples/audit-config.json`](examples/audit-config.json). Every key is optional.
 Workflow names match case- and whitespace-insensitively.
@@ -261,13 +269,22 @@ up account-wide — the finding then asks whether this sequence is on its remove
 ## The health score
 
 ```
-damage    = 25 per critical + 12 per high + 5 per medium + 2 per low
-tolerance = 8 points per published workflow
-score     = 100 - (100 × damage / (damage + tolerance))
+root cause = one rule, everywhere it fires on the account
+damage     = for each root cause, severity weight × √(number of sites)
+             weights: 25 critical, 12 high, 5 medium, 2 low
+tolerance  = 8 points per published workflow, shared out across the categories
+score      = 100 - (100 × damage / (damage + tolerance))
 ```
 
-A saturating curve, chosen for three properties:
+A saturating curve over root causes, chosen for four properties:
 
+- **A habit is one defect, not N.** An account that never handles a webhook failure has
+  made one decision, whether it is wrong in one workflow or in thirteen — and a person
+  fixing it has one thing to do. Charging it thirteen times reports thirteen problems,
+  and drops an account with one systemic habit below an account with a dozen unrelated
+  defects. The repeats are still real, so they are priced at √sites: rising, with
+  diminishing returns. The ordering that matters survives it — a high-severity habit
+  across thirteen workflows (43) still outweighs one isolated critical (25).
 - **No single finding can fail an account.** One critical on an otherwise healthy
   account is a bad day, not an F. A scoring model that overreacts once gets ignored
   forever after.
@@ -276,9 +293,19 @@ A saturating curve, chosen for three properties:
   it absorbs proportionally more findings before the grade moves. Twelve findings on
   sixty workflows is a well-run account; twelve on six is a fire.
 
-Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F below. The same formula produces the five
-category scores — **compliance**, **deliverability**, **routing**, **hygiene**,
-**dead weight** — so they are comparable to each other and to the total.
+Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, F below. The five category scores —
+**compliance**, **deliverability**, **routing**, **hygiene**, **dead weight** — come off
+the same curve and the same budget: each category gets the share of the tolerance that
+matches the share of the catalog able to fire in it, so a ten-rule category is not
+measured against a fifty-four-rule category's allowance.
+
+That last part is a correction. Until Sep-2026 every category was scored against the
+*entire* account's tolerance while the headline was scored against that same figure for
+all five categories at once — the same allowance spent five times over. A real
+thirteen-workflow account came back with Deliverability at 90 (A) and Hygiene at 50
+sitting above a headline of 16 (F). Both numbers were computed correctly and they could
+not both be describing the same account. A tool that argues with itself inside one table
+does not get believed about either number.
 
 **A category whose every check was skipped reports as "not assessed", never as 100.**
 That distinction is the point: a clean report and an unrun report must not look the same.
@@ -333,7 +360,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,015 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,065 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
@@ -343,6 +370,62 @@ configuration it would wrongly flag, and to feed it malformed exports — `steps
 a trigger that is a bare string, a settings value that is a list — because a traceback
 mid-audit stops the other 99 checks. What that pass found got fixed and became a
 regression test; that is most of why the suite is the size it is.
+
+### The measured rate
+
+A suite proves each rule fires on a fixture built to trip it. The same person wrote the
+rule and the fixture, so that is a weak guarantee — it says nothing about how often a
+rule misfires on a real export, which is the only number a client cares about.
+
+So the catalog is run against a real 13-workflow account and **every finding is judged by
+hand, one at a time, against the raw export**. The ledger is
+[`calibration/verdicts.json`](calibration/verdicts.json): each finding keyed by content,
+marked `real` or `false_positive`, with a note saying why. `scripts/precision_report.py
+--summary` re-derives the number from it.
+
+**145 findings judged, 39 false positives — 26.9%.** Nothing is unjudged; an unjudged
+finding is never counted as a pass, for the same reason the auditor reports a skipped
+check instead of silently omitting it.
+
+That number is worse than the one that stood here for an afternoon, and the difference is
+the whole argument for measuring. The first pass scored 8.3% because GHL007's twenty-two
+findings were marked `real` on the grounds that the *detection* was accurate, with a note
+saying the rule's premise had not been checked against GoHighLevel's documentation. A
+verdict with that note attached should never have been `real`. Checked properly, the
+premise was backwards and all twenty-two were false. **An unverified claim is not a pass,
+and recording it as one is how a measured number becomes a comfortable one.**
+
+It moved again, 23.4% to 26.9%, and for a related reason. GHL049 matched its AI pattern
+against a step's NAME as well as its type, so an If/Else called "Route by AI score" and
+three tag steps called "Tag as ai-hot/warm/cold" were all read as model calls. Five more
+findings that were marked `real` because the wording of each one was plausible, on steps
+that call no model at all. The `ai_safety` pack had already worked this out — a matching
+type is proof, a matching name is a hint needing a prompt or a model setting to back it —
+but GHL049 predates that pack and never inherited the discipline. **The same lesson
+arriving twice is what a duplicated helper buys you**; there is now one definition of an
+AI step, in `rules.py`, and the pack imports it.
+
+All 39 have been narrowed, and a re-run of the same account now produces **zero known
+false positives** — 56 findings where there were 81. The five that mattered most, because
+each put wrong advice in front of an account owner:
+
+| Rule | What it wrongly claimed | Why it was wrong |
+|---|---|---|
+| GHL007 ×22 | `create_opportunity` is deprecated — *swap it* | backwards. GoHighLevel split the **combined** Create/Update action into two; `create_opportunity` is the replacement, and there is no `internal_` variant to swap to. The advice would have broken 21 working steps |
+| GHL015 | two live campaigns were "identical copies" — *unpublish one* | compared structure and never read the copy; a shared skeleton is good practice |
+| GHL003 | a workflow ignored replies through a "day-2 follow-up" | its two sends fired back to back; there was no wait for a reply to land in |
+| GHL025 | an appointment confirmation needed an unsubscribe link | Google's sender guidance exempts reservation confirmations |
+| GHL029 | an instant reply "goes out three days later, at any hour" | the wait was **one minute**, and the rule never read its duration |
+
+GHL007 is the one worth dwelling on. The rescue tool had *refused* to act on it, because
+GHL099 in the same catalog said the opposite — two rules disagreeing, neither checked
+against the vendor's own docs, and the disagreement sat there instead of being resolved.
+A catalog that contradicts itself in public loses the client's trust in all hundred rules,
+not the two.
+
+One account is a start and not a calibration set. The rate above is honest about what it
+covers: 145 findings on one real export, judged by one person. It is not a population
+statistic and no copy may present it as one.
 
 **[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 100 checks with the
 symptom, the fix and what each one costs. It is generated from a real run against the

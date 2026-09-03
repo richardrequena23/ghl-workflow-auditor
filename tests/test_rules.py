@@ -180,13 +180,25 @@ class PortabilityRules(unittest.TestCase):
 
 
 class DataRules(unittest.TestCase):
-    def test_deprecated_opportunity_action(self):
-        steps = [{"type": "create_opportunity", "name": "Create"}]
+    def test_the_combined_opportunity_action_is_deprecated(self):
+        steps = [{"type": "create_update_opportunity", "name": "Create/Update"}]
         self.assertIn("GHL007", rules_hit([wf("Intake", steps)]))
 
-    def test_internal_variant_is_not_deprecated(self):
-        steps = [{"type": "internal_create_opportunity", "name": "Create"}]
-        self.assertNotIn("GHL007", rules_hit([wf("Intake", steps)]))
+    def test_the_split_actions_are_the_replacement_not_the_problem(self):
+        """The regression this rule shipped with, locked out.
+
+        GoHighLevel split the combined Create/Update Opportunity action into
+        two separate ones and is retiring the combined action. This rule flagged
+        the two REPLACEMENTS as deprecated and told the owner to swap them for
+        `internal_` variants that do not exist. It fired 21 times on one real
+        account, all of it correct configuration, and the advice would have
+        broken every one of those steps.
+        """
+        for t in ("create_opportunity", "update_opportunity",
+                  "internal_create_opportunity"):
+            steps = [{"type": t, "name": "Create"}]
+            self.assertNotIn("GHL007", rules_hit([wf("Intake", steps)]),
+                             f"{t} is a current action, not a deprecated one")
 
     def test_reentry_with_opportunity_creation(self):
         steps = [{"type": "create_opportunity", "name": "Create"}]
@@ -455,6 +467,45 @@ class OrphanTagRules(unittest.TestCase):
                [tag_trigger("vip"), {"type": "form_submitted"}])
         self.assertNotIn("GHL018", rules_hit([a]))
 
+    # The severity split. A published workflow that messages customers, gated
+    # behind a tag with no fingerprint anywhere in the account, is a build that
+    # may never have run — not the same news as an unfed housekeeping workflow.
+    def test_unfed_tag_on_a_sending_workflow_is_high(self):
+        a = wf("VIP Onboarding", [sms(), email()], [tag_trigger("vip")])
+        [f] = findings_for("GHL018", [a])
+        self.assertEqual("high", f.severity)
+        self.assertIn("vip", f.title)
+
+    def test_unfed_tag_with_no_sends_stays_low(self):
+        a = wf("Internal Bookkeeping", [tag_step("seen")], [tag_trigger("vip")])
+        [f] = findings_for("GHL018", [a])
+        self.assertEqual("low", f.severity)
+
+    def test_unfed_tag_mentioned_elsewhere_stays_low(self):
+        """A tag something reads is a tag a human plausibly applies by hand."""
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")])
+        b = wf("Nurture", [sms("Ask", "reply VIP for the vip upgrade")],
+               [{"type": "form_submitted"}])
+        [f] = findings_for("GHL018", [a, b])
+        self.assertEqual("low", f.severity)
+
+    def test_draft_workflow_is_not_reported(self):
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")], status="draft")
+        self.assertNotIn("GHL018", rules_hit([a]))
+
+    def test_a_declared_external_tag_is_not_a_finding(self):
+        """Where a tag comes from is the one thing an export cannot show."""
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip")])
+        cfg = AuditConfig.from_dict({"external_tags": ["VIP"]})
+        self.assertNotIn("GHL018", rules_hit([a], config=cfg))
+
+    def test_declaring_one_tag_does_not_silence_another(self):
+        a = wf("VIP Onboarding", [sms()], [tag_trigger("vip"), tag_trigger("gold")])
+        cfg = AuditConfig.from_dict({"external_tags": ["vip"]})
+        [f] = findings_for("GHL018", [a], config=cfg)
+        self.assertIn("gold", f.title)
+        self.assertNotIn("vip", f.title)
+
 
 # ==========================================================================
 # GHL019+ — the account-aware checks
@@ -597,6 +648,34 @@ class DanglingReferenceRules(unittest.TestCase):
                   "meta": {"calendarId": "cal_deleted"}}]
         findings, skips = audit_all([wf("Intake", steps)])
         self.assertNotIn("GHL020", {f.rule for f in findings})
+        self.assertIn("GHL020", {s.rule for s in skips})
+
+    # A workflow reference needs no inventory: the workflows are the export.
+    # This half used to sit behind the inventory gate, so a workflows-only
+    # bundle reported the whole rule skipped and never made the one check it
+    # could have made.
+    def test_dangling_workflow_reference_needs_no_inventory(self):
+        steps = [{"type": "remove_from_workflow", "name": "Stop nurture",
+                  "meta": {"workflow_id": "wf_deleted"}}]
+        found = findings_for("GHL020", [wf("Intake", steps)])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].severity, "critical")
+        self.assertIn("workflow", found[0].title)
+
+    def test_a_live_workflow_reference_passes(self):
+        target = wf("Nurture", [sms()])
+        steps = [{"type": "remove_from_workflow", "name": "Stop nurture",
+                  "meta": {"workflow_id": "Nurture"}}]
+        self.assertNotIn("GHL020", rules_hit([wf("Intake", steps), target]))
+
+    def test_the_inventory_skip_still_fires_alongside_it(self):
+        """Checking one half is not a licence to claim the rule ran."""
+        steps = [{"type": "remove_from_workflow", "name": "Stop nurture",
+                  "meta": {"workflow_id": "wf_deleted"}},
+                 {"type": "book_appointment", "name": "Book",
+                  "meta": {"calendarId": "cal_deleted"}}]
+        findings, skips = audit_all([wf("Intake", steps)])
+        self.assertIn("GHL020", {f.rule for f in findings})
         self.assertIn("GHL020", {s.rule for s in skips})
 
 
@@ -793,12 +872,103 @@ class EmailDeliverabilityRules(unittest.TestCase):
                               "value": "confirmed"}]}]
         self.assertNotIn("GHL025", rules_hit([wf("Confirmation", steps, trig)]))
 
+    def test_a_confirmation_plus_its_pre_call_note_is_still_transactional(self):
+        """Two messages about one booking are one transaction.
+
+        Google's sender guidance names reservation confirmations as exempt from
+        the one-click unsubscribe requirement. The rule used to exempt a
+        transactional workflow only when it held exactly one email, so a real
+        account's "Strategy Call - Booking & Confirmation v2" — confirmation
+        plus a pre-call note — was told to add an unsubscribe link to an
+        appointment confirmation. That is wrong advice and harmful advice:
+        opting out of transactional mail is how someone stops receiving the
+        reminder for the call they booked.
+        """
+        steps = [email("Confirmed", "You're booked for Tuesday."), wait(),
+                 email("Before we talk", "Here's what to have ready.")]
+        trig = [{"type": "customer_booked_appointment",
+                 "filters": [{"field": "appointment_status",
+                              "value": "confirmed"}]}]
+        self.assertNotIn("GHL025",
+                         rules_hit([wf("Booking & Confirmation", steps, trig)]))
+
+    def test_a_third_email_makes_it_a_campaign_again(self):
+        """A chase is marketing whatever triggered it.
+
+        "Same-day rebook / Second touch / Close-out" off an appointment trigger
+        is a sequence aimed at a person who did not respond, not a receipt.
+        """
+        steps = [email("Same day", "Want to grab another time?"), wait(),
+                 email("Second touch", "Still keen?"), wait(),
+                 email("Close out", "Last one from me.")]
+        trig = [{"type": "customer_booked_appointment",
+                 "filters": [{"field": "appointment_status",
+                              "value": "noshow"}]}]
+        self.assertIn("GHL025", rules_hit([wf("No Show Recovery", steps, trig)]))
+
+    def test_a_form_fill_chase_is_marketing_not_a_transaction(self):
+        """A form submission is a lead capture, not a receipt.
+
+        `form_submitted` sat in the transactional trigger list, so any
+        published sequence that fired off a form and happened to send two
+        emails was exempted from the unsubscribe check. On a real account that
+        hid "Speed to Lead - 5 Minute Response" — instant SMS, backup email,
+        booking link, last touch, no unsubscribe token anywhere — which is a
+        cold chase by any reading. Google's exemption covers transactions and
+        reservations; nothing about a form fill is either.
+        """
+        steps = [email("Backup email", "Just checking you saw this."), wait(),
+                 email("Last touch", "Last one from me.")]
+        trig = [{"type": "form_submitted", "name": "Enquiry"}]
+        self.assertIn("GHL025", rules_hit([wf("Speed to Lead", steps, trig)]))
+
+    def test_an_order_form_is_still_transactional(self):
+        """Removing form_submitted must not take order forms with it.
+
+        `order_form_submitted` names an actual purchase, and it stays exempt
+        by matching on "order" rather than on "form".
+        """
+        steps = [email("Receipt", "Thanks for your order."), wait(),
+                 email("On its way", "Your order has shipped.")]
+        trig = [{"type": "order_form_submitted", "name": "Order form"}]
+        self.assertNotIn("GHL025", rules_hit([wf("Order receipt", steps, trig)]))
+
     def test_config_can_mark_a_workflow_transactional(self):
         steps = [email("Receipt", "Your receipt"), wait(),
                  email("Receipt copy", "Copy of your receipt")]
         cfg = AuditConfig.from_dict({"transactional_workflows": ["Receipts"]})
         self.assertNotIn("GHL025", rules_hit([wf("Receipts", steps)],
                                              config=cfg))
+
+    def test_a_one_minute_hold_is_not_an_hour_shift(self):
+        """Speed-to-lead answering fast is not a 3am text.
+
+        This rule exists because "wait 3 days" lands at whatever o'clock the
+        trigger fired. A one-minute pause to let a form finish writing lands in
+        the same minute, and the lead who submitted at 11:40pm is waiting for
+        that reply. The rule's own docstring said flagging speed-to-lead would
+        be noise; it did exactly that until the wait's duration was read.
+        """
+        steps = [{"type": "wait", "name": "Hold 1 minute",
+                  "meta": {"startAfter": {"type": "minutes", "value": 1}}},
+                 sms("Instant reply", "Got your enquiry - what time suits?")]
+        self.assertNotIn("GHL029", rules_hit([wf("Speed to Lead", steps,
+                         [{"type": "form_submitted"}])]))
+
+    def test_a_multi_day_wait_still_needs_a_window(self):
+        steps = [{"type": "wait", "name": "Wait 3 days",
+                  "meta": {"startAfter": {"type": "days", "value": 3}}},
+                 sms("Follow up", "Still thinking it over?")]
+        self.assertIn("GHL029", rules_hit([wf("Nurture", steps,
+                      [{"type": "form_submitted"}])]))
+
+    def test_an_unbounded_wait_is_treated_as_long(self):
+        """A reply-wait with no duration can hold for days. Assume it does."""
+        steps = [{"type": "wait", "name": "Wait for a reply",
+                  "meta": {"type": "reply"}},
+                 sms("Last touch", "Closing your file.")]
+        self.assertIn("GHL029", rules_hit([wf("Missed Call", steps,
+                      [{"type": "form_submitted"}])]))
 
     def test_unverified_sending_domain(self):
         steps = [email("Tip", "Here is a tip. {{unsubscribe}}")]
@@ -968,6 +1138,57 @@ class DuplicateWorkflowRules(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].severity, "critical")
         self.assertIn("identical copies", found[0].title)
+
+    def test_the_same_skeleton_with_different_words_is_not_a_clone(self):
+        """The false positive this rule shipped with, locked out.
+
+        A real account had a referral ask and a review ask: same trigger, same
+        twenty steps in the same order, completely different copy. The rule saw
+        one shape, called them "2 identical copies of the same workflow", and
+        told the owner to unpublish one of two live campaigns. Reusing a
+        skeleton is good practice, and a critical whose fix is "delete a
+        campaign" has to be certain before it says so.
+        """
+        skeleton = lambda one, two: [sms("Ask 1", one), wait(), sms("Ask 2", two)]
+        referral = wf("Referral Request",
+                      skeleton("Anyone you know who needs the same work done?",
+                               "No pressure - just checking if a name came to mind."),
+                      [{"type": "contact_tag_added",
+                        "filters": [{"tag": "job-complete"}]}])
+        review = wf("Review Request",
+                    skeleton("If it's what you needed, a review helps a lot.",
+                             "No rush - here's the link if you've got a minute."),
+                    [{"type": "contact_tag_added",
+                      "filters": [{"tag": "job-complete"}]}])
+        found = findings_for("GHL015", [referral, review])
+        self.assertEqual(len(found), 1)
+        # Still reported: they DO both enroll on the same tag, and a contact
+        # tagged job-complete really does get both sequences at once. What must
+        # not happen is the critical that says one of them is a duplicate.
+        self.assertEqual(found[0].severity, "high")
+        self.assertNotIn("identical copies", found[0].title)
+
+    def test_a_snapshot_re_push_is_still_caught(self):
+        """The case the rule exists for. Copy is copied too, so it still fires."""
+        steps = [sms("Welcome", "Hi there, thanks for reaching out."),
+                 wait(), sms("Nudge", "Just checking you saw my message.")]
+        a = wf("Welcome", steps, [{"type": "contact_created"}])
+        b = wf("Welcome (copy)", list(steps), [{"type": "contact_created"}])
+        found = findings_for("GHL015", [a, b])
+        self.assertEqual(found[0].severity, "critical")
+        self.assertIn("identical copies", found[0].title)
+
+    def test_the_same_message_in_html_and_plain_text_still_matches(self):
+        """Encoding is not authorship. Two copies of one workflow are one."""
+        from ghlaudit.model import parse_workflow
+        plain = {"type": "email", "name": "Ask",
+                 "meta": {"subject": "Hi", "body": "Thanks for your time."}}
+        marked = {"type": "email", "name": "Ask",
+                  "meta": {"subject": "Hi",
+                           "body": "<p>Thanks   for your time.</p>"}}
+        a = parse_workflow(wf("A", [plain], [{"type": "contact_created"}]))
+        b = parse_workflow(wf("B", [marked], [{"type": "contact_created"}]))
+        self.assertEqual(a.copy_fingerprint(), b.copy_fingerprint())
 
     def test_different_shapes_on_one_trigger_stay_high(self):
         a = wf("Welcome Text", [sms()], [{"type": "contact_created"}])
@@ -1482,6 +1703,130 @@ class Scoring(unittest.TestCase):
         scores = [f.cost_score() for f in ranked]
         self.assertEqual(scores, sorted(scores, reverse=True))
 
+    def test_one_rule_repeated_is_one_root_cause(self):
+        from ghlaudit.rules import Finding
+        from ghlaudit.score import root_causes
+        many = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                        title="t", symptom="s", fix="f") for i in range(13)]
+        roots = root_causes(many)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0].sites, 13)
+        self.assertEqual(len(roots[0].workflows), 13)
+
+    def test_a_habit_costs_less_than_the_same_count_of_separate_defects(self):
+        """Thirteen sites of one rule must not grade like thirteen defects.
+
+        This is the whole point of grouping: an account with one systemic habit
+        has one thing to fix and should not sink below an account with a dozen
+        unrelated problems.
+        """
+        from ghlaudit.rules import Finding
+        habit = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                         title="t", symptom="s", fix="f") for i in range(13)]
+        spread = [Finding(rule=f"GHL{i:03d}", severity="high", workflow="w",
+                          title="t", symptom="s", fix="f")
+                  for i in range(1, 14)]
+        self.assertGreater(self.health(habit, [], 13).score,
+                           self.health(spread, [], 13).score)
+
+    def test_more_sites_still_costs_more(self):
+        """Diminishing, not free. Spread is real damage and has to register."""
+        from ghlaudit.rules import Finding
+        def n_sites(n):
+            f = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                         title="t", symptom="s", fix="f") for i in range(n)]
+            return self.health(f, [], 13).score
+        self.assertGreater(n_sites(1), n_sites(4))
+        self.assertGreater(n_sites(4), n_sites(13))
+
+    def test_a_systemic_high_still_outweighs_one_isolated_critical(self):
+        from ghlaudit.rules import Finding
+        habit = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                         title="t", symptom="s", fix="f") for i in range(13)]
+        crit = [Finding(rule="GHL015", severity="critical", workflow="w",
+                        title="t", symptom="s", fix="f")]
+        self.assertLess(self.health(habit, [], 13).score,
+                        self.health(crit, [], 13).score)
+
+    def test_the_categories_and_the_headline_share_one_budget(self):
+        """No category may outrank the headline while carrying all the damage.
+
+        The bug this locks out: every category used to be scored against the
+        whole account's tolerance while the headline was scored against that
+        same figure for all five at once, so a report could show categories at
+        A and B above an F. If one category holds every finding, its score and
+        the headline must not disagree in that direction.
+        """
+        from ghlaudit.rules import Finding
+        f = [Finding(rule=f"GHL{i:03d}", severity="high", workflow=f"w{i}",
+                     title="t", symptom="s", fix="f", category="compliance")
+             for i in range(1, 9)]
+        hs = self.health(f, [], 13)
+        compliance = next(c for c in hs.categories if c.key == "compliance")
+        self.assertLessEqual(compliance.score, hs.score)
+
+    def test_a_small_category_is_not_judged_on_a_big_one_s_allowance(self):
+        """Ten rules do not get the same tolerance as fifty-four."""
+        from ghlaudit.score import _tolerance
+        self.assertLess(_tolerance(13, "deliverability"),
+                        _tolerance(13, "routing"))
+        self.assertLess(_tolerance(13, "routing"), _tolerance(13))
+
+    def test_the_summary_line_leads_with_root_causes(self):
+        from ghlaudit.report import summary_line
+        from ghlaudit.rules import Finding
+        many = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                        title="t", symptom="s", fix="f") for i in range(13)]
+        line = summary_line(many, 13)
+        self.assertIn("1 root cause showing up in 13 places", line)
+
+    def test_the_fix_list_names_one_job_once(self):
+        """A to-do list that repeats the same job is a worse to-do list."""
+        from ghlaudit.rules import Finding
+        many = [Finding(rule="GHL041", severity="high", workflow=f"w{i}",
+                        title="t", symptom="s", fix="f") for i in range(13)]
+        hs = self.health(many, [], 13)
+        self.assertEqual(len(hs.ranked), 13)
+        self.assertEqual(len(hs.fix_order), 1)
+        self.assertEqual(hs.fix_order[0][1], 13)
+
+    def test_the_client_report_still_names_every_site(self):
+        """Grouping must not cost the reader the list of places to go.
+
+        Sites and workflows are counted separately on purpose: four AI-verdict
+        branches inside one sequence are four places to fix and one workflow to
+        open, and a report that calls that "4 workflows" is simply wrong.
+        """
+        from ghlaudit.report import as_html
+        from ghlaudit.rules import Finding
+        f = [Finding(rule="GHL041", severity="high", workflow="Qualification",
+                     step=f"Sync verdict - {tag}", title="t", symptom="s",
+                     fix="f") for tag in ("HOT", "WARM", "COLD")]
+        html = as_html(f, 13, [])
+        self.assertIn("3 places across 1 workflow", html)
+        for tag in ("HOT", "WARM", "COLD"):
+            self.assertIn(f"Sync verdict - {tag}", html)
+        self.assertNotIn("3 workflows", html)
+
+    def test_two_sends_with_no_pause_between_them_is_not_a_drip(self):
+        """No wait, no window for a reply to land in, nothing to ignore.
+
+        A real reply-triggered workflow sent the booking link by SMS and by
+        email, back to back, and was flagged for "2 outbound messages, nothing
+        listening for a reply" — with a symptom describing a day-2 follow-up it
+        did not have. One touch delivered twice is not a sequence.
+        """
+        steps = [sms("Link", "Here's my calendar."),
+                 email("Link", "Here's my calendar.")]
+        self.assertNotIn("GHL003", rules_hit([wf("Reply Handler", steps,
+                         [{"type": "customer_replied"}])]))
+
+    def test_a_send_after_a_wait_is_still_a_drip(self):
+        steps = [sms("Touch 1", "You free this week?"), wait(),
+                 sms("Touch 2", "Last one from me.")]
+        self.assertIn("GHL003", rules_hit([wf("Nurture", steps,
+                      [{"type": "contact_created"}])]))
+
     def test_reach_widens_the_blast_radius(self):
         from ghlaudit.rules import Finding
         small = Finding(rule="GHL003", severity="high", workflow="a",
@@ -1980,6 +2325,38 @@ class AiEnumRules(unittest.TestCase):
         steps = [ai_step(prompt="Summarise the conversation"),
                  sms("A human-written follow-up")]
         self.assertNotIn("GHL049", rules_hit([wf("AI Notes", steps)]))
+
+    def test_a_branch_named_after_the_ai_is_not_itself_an_ai_step(self):
+        """Builders name steps after what they route on.
+
+        "Route by AI score" is an If/Else reading a field; it calls no model.
+        Reading it as one reported five findings on a real account for steps
+        that cannot possibly be unconstrained, because they generate nothing.
+        """
+        steps = [{"type": "if_else", "name": "Route by AI score",
+                  "meta": {"conditions": [{"field": "contact.ai_score"}]}},
+                 {"type": "if_else", "name": "Second branch",
+                  "meta": {"conditions": [{"field": "contact.x"}]}}]
+        self.assertNotIn("GHL049", rules_hit([wf("Router", steps)]))
+
+    def test_a_tag_step_named_after_the_ai_is_not_an_ai_step(self):
+        steps = [{"type": "add_contact_tag", "name": "Tag as ai-hot",
+                  "meta": {"tags": ["ai-hot"]}},
+                 {"type": "if_else", "name": "Route on tag",
+                  "meta": {"conditions": [{"field": "contact.tags"}]}}]
+        self.assertNotIn("GHL049", rules_hit([wf("Tagger", steps)]))
+
+    def test_a_name_match_still_counts_when_the_step_carries_a_prompt(self):
+        """The name fallback exists for a real case and must survive the fix.
+
+        A webhook posting to a model is a genuine AI step whose type says
+        nothing; the prompt is what corroborates the name.
+        """
+        steps = [{"type": "webhook", "name": "AI - score this lead",
+                  "meta": {"prompt": "How ready is this lead to buy?"}},
+                 {"type": "if_else", "name": "Route on score",
+                  "meta": {"conditions": [{"field": "contact.score"}]}}]
+        self.assertIn("GHL049", rules_hit([wf("Hidden AI", steps)]))
 
     def test_unconstrained_ai_step_with_nested_parameters_is_flagged(self):
         # n8n-shaped AI node: settings live under `parameters`, not `meta`.

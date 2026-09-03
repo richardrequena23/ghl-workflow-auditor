@@ -203,6 +203,11 @@ def sender_with_no_listener(acct: Account):
     for wf in acct.published():
         if len(wf.outbound) < 2 or wf.has_reply_release():
             continue
+        # Two sends with no pause between them cannot ignore a reply — there is
+        # no window for one to arrive in. An SMS and the same message by email,
+        # fired together, is one touch delivered twice.
+        if not wf.sends_across_a_wait():
+            continue
         if handler is not None and handler.id != wf.id:
             # The account has a central listener, so this is a design choice rather
             # than a defect. Still worth surfacing: the listener has to actually name
@@ -463,20 +468,55 @@ def unresolved_placeholder(acct: Account):
                      "cost you the lead and a support conversation.")
 
 
+# The action GoHighLevel actually deprecated is the COMBINED create-or-update
+# opportunity action, replaced by two separate ones. Matching on "this type
+# mentions an opportunity and does both" keeps the rule quiet when the export
+# uses a naming this does not recognise, which is the right way round to fail:
+# see the note on the rule below for what happened when it was the other way.
+COMBINED_OPPORTUNITY = re.compile(
+    r"(?=.*opportunit)(?=.*creat)(?=.*updat)", re.I)
+
+
 @rule("GHL007", "Deprecated opportunity action", "low", "hygiene", "maintenance")
 def deprecated_action(acct: Account):
+    """The combined create-or-update opportunity action.
+
+    ⛔ This rule used to flag `create_opportunity` and `update_opportunity` and
+    tell the owner to swap them for `internal_` variants. That was backwards
+    and it was destructive advice. GoHighLevel split the combined
+    "Create/Update Opportunity" action into two separate actions and is
+    deprecating the COMBINED one for new workflows — `create_opportunity` is
+    the recommended replacement, not the problem. There is no `internal_`
+    action to swap to.
+
+    It fired 21 times on one real account, on entirely correct configuration,
+    and its own rescue tool refused to act on it because GHL099 said the
+    opposite. Two rules in the same catalog disagreeing, with neither checked
+    against the vendor's documentation, is how a catalog loses a client's
+    trust in all hundred of them.
+
+    Even where the combined action IS present, GoHighLevel keeps existing
+    workflows running — so this stays `low` and says so.
+    """
     for wf in acct.workflows:
-        hits = wf.steps_of("create_opportunity", "update_opportunity")
-        for step in hits:
+        for step in wf.steps:
+            if not COMBINED_OPPORTUNITY.search(step.type):
+                continue
             yield _finding(
                 "GHL007", "low", wf,
-                f"'{step.type}' is deprecated",
-                "Existing workflows keep running, so nothing is broken today. But the "
-                "action is flagged deprecated in the panel and will not be maintained.",
-                f"Swap to internal_{step.type} when you next touch this workflow.",
+                f"'{step.type}' is the combined opportunity action",
+                "GoHighLevel split this into separate Create Opportunity and "
+                "Update Opportunity actions and is retiring the combined one "
+                "for new workflows. Existing workflows keep running, so "
+                "nothing is broken today. The split actions do things this one "
+                "cannot: update the opportunity that triggered the workflow, "
+                "and act on one found by a Find Opportunity step.",
+                "Replace it with the separate 'Create Opportunity' or 'Update "
+                "Opportunity' action next time you touch this workflow, and "
+                "re-select the pipeline and stage afterwards.",
                 step=step.name or step.type,
-                cost="Nothing today. It is maintenance debt that comes due on somebody "
-                     "else's schedule, not yours.")
+                cost="Nothing today. It is maintenance debt that comes due on "
+                     "somebody else's schedule, not yours.")
 
 
 @rule("GHL011", "Re-enrollment on a workflow that creates records", "medium", "routing", "data")
@@ -724,11 +764,20 @@ def duplicate_enrollment(acct: Account):
             continue
         seen.add(key)
 
-        # Same trigger AND the same ordered action types is not a collision, it
-        # is the same workflow existing twice — what a snapshot re-pushed onto a
-        # non-blank sub-account leaves behind. Everything double-sends, exactly.
+        # Same trigger, same ordered action types AND the same message copy is
+        # not a collision, it is the same workflow existing twice — what a
+        # snapshot re-pushed onto a non-blank sub-account leaves behind.
+        #
+        # The copy check is not optional. Structure alone flagged a real
+        # account's referral ask and its review ask as "2 identical copies" and
+        # told the owner to unpublish one: same trigger, same twenty steps, and
+        # completely different words. Reusing a skeleton is good practice, and
+        # a critical whose fix is "delete a live campaign" has to be certain.
+        # A snapshot re-push copies the copy too, so requiring it costs the
+        # rule nothing on the case it exists to catch.
         shapes = {by_name[n].shape() for n in names}
-        cloned = len(shapes) == 1 and len(names) > 1
+        copies = {by_name[n].copy_fingerprint() for n in names}
+        cloned = len(shapes) == 1 and len(copies) == 1 and len(names) > 1
         reach = max(len(by_name[n].outbound) for n in names)
 
         if cloned:
@@ -856,18 +905,95 @@ def sms_without_opt_out(acct: Account):
                  "and the symptom the client reports is 'leads stopped replying'.")
 
 
-@rule("GHL018", "Nothing adds the tag this workflow waits for", "low", "dead_weight", "triggers", "hygiene")
+@rule("GHL018", "Nothing adds the tag this workflow waits for", "high", "dead_weight", "triggers", "hygiene")
 def orphan_tag_trigger(acct: Account):
+    """A tag-triggered workflow whose tag nothing in the account applies.
+
+    A tag trigger fires on the tag arriving from anywhere — a form, a bulk
+    action, an integration, a human clicking it — so an unfed tag is not proof
+    the workflow is dead, and this rule does not claim it is.
+
+    It does grade on what is at stake, because two very different situations
+    were being reported identically. A tag-triggered workflow with no outbound
+    steps is housekeeping: if it never runs, nobody notices, and that is a low.
+    A published workflow that texts and emails customers, whose only way in is
+    a tag that appears NOWHERE else in this export — not added, not removed,
+    not branched on, not named in any copy — is a build that was paid for and
+    may never have sent a single message. The evidence does not prove it is
+    dead, but it is the only trace an audit can see, and reporting it at the
+    same weight as a tidy-up note buries it.
+
+    The "appears nowhere else" test is what separates the two. A tag a human
+    really does apply by hand tends to leave fingerprints — a branch that reads
+    it, a step that clears it, a mention in a message. A tag with no fingerprint
+    at all is most often a step that was never built or a name that was typed
+    twice, differently.
+    """
     added: set[str] = set()
     for w in acct.workflows:
         added |= w.tags_added()
+
+    # Every place a tag name can legitimately show up other than the trigger
+    # that waits for it: an add-tag or remove-tag step, a branch condition, a
+    # filter, message copy. Built once, from the whole account.
+    elsewhere = " ".join(
+        [w.text() for w in acct.workflows]
+        + [t.filter_blob() for w in acct.workflows for t in w.triggers
+           if not w.published or True]
+    ).lower()
+
     for wf in acct.published():
         if not wf.triggers or not all("tag" in t.type.lower() for t in wf.triggers):
             continue  # another trigger type can still start it
         tags = wf.trigger_tags()
         if not tags or tags & added:
             continue
+        # The caller can tell us a tag is applied by a human, a form, a bulk
+        # action or an integration. That is the one thing an export cannot show,
+        # and without a way to say it a correctly built account gets flagged at
+        # high severity forever. Only silence the tags actually declared.
+        tags = {t for t in tags if not acct.config.tag_comes_from_outside(t)}
+        if not tags:
+            continue
         missing = ", ".join(sorted(tags))
+
+        # What is sitting behind the closed door?
+        sends = len(wf.sms_steps) + len(wf.email_steps)
+        # Does any of these tags leave a trace outside its own trigger? Each
+        # trigger serialises its tag twice (the value and the filter blob), so
+        # the floor for "only the trigger knows about it" is two per waiting
+        # workflow — anything above that is a real second mention.
+        waiting = sum(1 for w in acct.workflows for t in w.triggers
+                      if tags & t.tag_values())
+        traces = sum(elsewhere.count(t.lower()) for t in tags)
+        unmentioned = traces <= waiting * 2
+
+        if sends and unmentioned:
+            yield _finding(
+                "GHL018", "high", wf,
+                f"Published, sends {sends} message{'s' if sends != 1 else ''}, "
+                f"and the only way in is '{missing}' — which nothing here adds",
+                "This workflow's only trigger waits for that tag, and the tag "
+                "appears nowhere else in this account: no step adds it, no step "
+                "removes it, no branch reads it, no message mentions it. The "
+                "workflow is published and configured to contact customers, so "
+                "either something outside this export applies the tag, or this "
+                "sequence has never run for anybody. An audit cannot tell those "
+                "apart from the outside — but nothing here supports the first "
+                "one, and the usual cause is an add-tag step that was never "
+                "built, or the same tag typed two different ways.",
+                "Find where the tag is meant to come from and confirm it in the "
+                "contact record of someone who should have entered. If another "
+                "workflow was supposed to apply it, add that step; if it is "
+                "applied by hand or by an integration, say so in the workflow "
+                "description so the next audit stops flagging it.",
+                reach=sends,
+                cost=f"{sends} customer-facing message"
+                     f"{'s are' if sends != 1 else ' is'} configured here and may "
+                     "never have been sent. The work is built and paid for; it is "
+                     "one tag away from running.")
+            continue
+
         yield _finding(
             "GHL018", "low", wf,
             f"No workflow in this account adds '{missing}'",
@@ -985,28 +1111,45 @@ def dangling_reference(acct: Account):
                   "survey": "surveys", "template": "templates"}
     workflow_ids = {w.id for w in acct.workflows if w.id}
 
+    # One class of reference needs nothing but the export in hand: a step that
+    # jumps a contact into another workflow, or pulls them out of one, names a
+    # workflow — and the workflows are right here. This used to sit inside the
+    # object-list branch below, so on a workflows-only export the whole rule
+    # reported itself skipped and never made the one check it could have made.
+    # A critical check that goes blind on data it is holding is worse than a
+    # missing check, because the coverage line says it was only unsupplied.
+    misses: dict = {}
+    if workflow_ids:
+        for wf in acct.published():
+            for step in wf.steps:
+                for kind, ident in step.entity_refs():
+                    if kind == "workflow" and ident not in workflow_ids:
+                        misses.setdefault((wf.name, kind), []).append(
+                            (step.name or step.type, ident))
+
     have_any = any(inv.has(bucket_for[k]) for k in checkable if k in bucket_for)
     if not have_any:
+        # Still a skip: the calendar, user, pipeline and template references
+        # genuinely cannot be judged, and coverage must keep saying so. The
+        # workflow-to-workflow findings above stand on their own.
+        yield from _dangling_findings(acct, misses)
         yield Skip(
             rule="GHL020",
             title="Reference to something that does not exist",
             reason="No account object lists were supplied, so a reference to a "
                    "deleted calendar, user, pipeline or template cannot be told "
-                   "apart from one that simply was not in this export.",
+                   "apart from one that simply was not in this export. "
+                   "Workflow-to-workflow references were checked.",
             needs="calendars / users / pipelines / forms / surveys / "
                   "emailTemplates in the input bundle",
             category="hygiene")
         return
 
-    misses: dict = {}
     for wf in acct.published():
         for step in wf.steps:
             for kind, ident in step.entity_refs():
                 if kind == "workflow":
-                    if workflow_ids and ident not in workflow_ids:
-                        misses.setdefault((wf.name, kind), []).append(
-                            (step.name or step.type, ident))
-                    continue
+                    continue  # already done above
                 bucket = bucket_for.get(kind)
                 if not bucket or not inv.has(bucket):
                     continue
@@ -1027,6 +1170,11 @@ def dangling_reference(acct: Account):
                         cost="Every notification this step sends goes nowhere. "
                              "Leads it was meant to surface are never seen.")
 
+    yield from _dangling_findings(acct, misses)
+
+
+def _dangling_findings(acct: Account, misses: dict):
+    """Emit one critical per (workflow, reference kind) that did not resolve."""
     for (wf_name, kind), hits in sorted(misses.items()):
         wf = next(w for w in acct.published() if w.name == wf_name)
         names = ", ".join(sorted({h[0] for h in hits}))
@@ -1343,6 +1491,39 @@ def sms_fallback_filter(acct: Account):
                      "worth replying to.")
 
 
+def _on_shared_sender(settings) -> bool:
+    """Is this account sending through LeadConnector's managed infrastructure?
+
+    `hasLcEmail` is the flag GoHighLevel sets when the location sends through
+    LeadConnector rather than a sending domain of its own. It appears at the
+    top level of the location and again inside `emailIsvSettings`, so this
+    looks at any depth. A location that HAS configured its own domain is not
+    on the shared sender even if the flag is still set, so a non-empty
+    `domain` wins.
+    """
+    if not isinstance(settings, dict):
+        return False
+    flag = False
+    dedicated = False
+
+    def walk(node):
+        nonlocal flag, dedicated
+        if isinstance(node, dict):
+            for k, v in node.items():
+                key = str(k).lower()
+                if key == "haslcemail" and v is True:
+                    flag = True
+                if key == "domain" and isinstance(v, str) and v.strip():
+                    dedicated = True
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(settings)
+    return flag and not dedicated
+
+
 @rule("GHL025", "Email that will not land", "high", "compliance", "deliverability")
 def email_deliverability(acct: Account):
     """Unsubscribe and sending-domain authentication.
@@ -1362,10 +1543,34 @@ def email_deliverability(acct: Account):
             continue
         # A receipt or a booking confirmation is transactional and does not need
         # one; a sequence is marketing whatever it is called.
+        #
+        # The line sits at two emails, not one. Google's sender guidance names
+        # reservation confirmations as exempt, and a booking workflow that
+        # sends the confirmation and then a pre-call note is still that one
+        # reservation — the second message is anchored to the same event, not a
+        # second attempt at the person. This account had exactly that shape
+        # ("Strategy Call - Booking & Confirmation v2": confirmation + pre-call)
+        # and the rule told its owner to put an unsubscribe link on an
+        # appointment confirmation, which is both wrong and harmful: opting out
+        # of transactional mail is how someone stops receiving their reminder.
+        #
+        # A third email is where it stops being one transaction. By then the
+        # workflow is chasing — "Same-day rebook / Second touch / Close-out" is
+        # a campaign whatever triggered it, and that one still gets flagged.
+        # ⛔ `form_submitted` does NOT belong in this list, and used to.
+        # Google's exemption is for transactions and reservations — receipts,
+        # order and payment confirmations, appointment confirmations. A form
+        # submission is a lead capture. The mail that follows it is the
+        # definition of marketing, and on a real account this exemption hid a
+        # published cold-chase ("Speed to Lead - 5 Minute Response": instant
+        # SMS, backup email, booking link, last touch) from a compliance rule,
+        # purely because it sent exactly two emails off a form trigger. An
+        # order form still qualifies: `order_form_submitted` matches on
+        # "order", which is the trigger that names an actual transaction.
         transactional = any(
             any(k in t.canonical_type() for k in
-                ("appointment", "order", "payment", "invoice", "form_submitted"))
-            for t in wf.triggers) and len(emails) == 1
+                ("appointment", "order", "payment", "invoice"))
+            for t in wf.triggers) and len(emails) <= 2
         if transactional:
             continue
         blob = wf.bodies() or wf.text()
@@ -1418,6 +1623,41 @@ def email_deliverability(acct: Account):
     senders = [w for w in acct.published() if w.email_steps]
     if senders and not inv.verified_email_domains:
         listed = ", ".join(d["domain"] for d in inv.email_domains) or "none at all"
+
+        # ⛔ "No dedicated domain" is NOT the same as "unauthenticated", and
+        # saying so to an account on LeadConnector's managed sending would be
+        # a high-severity claim that is simply untrue. HighLevel's own
+        # documentation states DMARC is not required to send from the shared
+        # LeadConnector domains — because LC authenticates that domain itself,
+        # with its own SPF and DKIM. The mail passes; what it does not do is
+        # align with the client's own domain, and it rides shared-IP
+        # reputation it does not control. That is a real problem, worth
+        # reporting, and it is a different and lesser one.
+        if _on_shared_sender(inv.email_settings):
+            yield Finding(
+                rule="GHL025", severity="medium", workflow="(account)",
+                step="LeadConnector shared sending", category="deliverability",
+                reach=sum(len(w.email_steps) for w in senders),
+                title="Sending on LeadConnector's shared domain, with no "
+                      "domain of its own",
+                symptom=f"{len(senders)} published workflows send email and "
+                        "this account has no dedicated sending domain, so it "
+                        "sends through LeadConnector's shared infrastructure. "
+                        "That mail IS authenticated — LeadConnector signs it "
+                        "with its own SPF and DKIM, which is why the platform "
+                        "does not require DMARC to send this way. What it "
+                        "cannot do is align the From address with this "
+                        "business's own domain, and its reputation is shared "
+                        "with every other account sending from the same pool.",
+                cost="Deliverability rises and falls on strangers' sending "
+                     "habits, and there is no reputation being built that this "
+                     "business would keep if it left the platform.",
+                fix="Set up a dedicated sending subdomain and complete its DNS "
+                    "verification when volume justifies it. Until then this is "
+                    "a known trade-off rather than a defect — nothing is "
+                    "failing authentication today.")
+            return
+
         yield Finding(
             rule="GHL025", severity="high", workflow="(account)",
             step=listed, category="deliverability",
@@ -1700,7 +1940,17 @@ def delayed_sends_without_a_window(acct: Account):
             if s.is_wait:
                 # A wait carrying its own send window resumes inside that
                 # window, so the send right after it is timed, not stray.
-                waited = not _step_window(s)
+                #
+                # A short hold does not move a send into a different hour
+                # either. This rule's whole premise is that "wait 3 days" lands
+                # at whatever o'clock the trigger fired — a one-minute pause to
+                # let a form finish writing lands in the same minute, and the
+                # lead who submitted at 11:40pm is expecting that reply. The
+                # docstring above already said flagging speed-to-lead would be
+                # noise; without this it did exactly that.
+                minutes = s.wait_minutes()
+                brief = minutes is not None and minutes < 60
+                waited = not _step_window(s) and not brief
             elif waited and (s.is_sms or s.type in ("call", "manual_call",
                                                     "voicemail")):
                 delayed.append(s)
@@ -2914,6 +3164,64 @@ def scheduled_without_heartbeat(acct: Account):
 AI_STEP_TYPE = re.compile(
     r"\bai\b|(^|[_-])ai($|[_-])|chatgpt|openai|\bgpt\b|gpt[_-]|claude|"
     r"\bllm\b|anthropic", re.I)
+
+# The keys a step carries when it really does call a model. A name is only ever
+# a hint; one of these is the corroboration.
+MODEL_CALL_KEYS = {"prompt", "prompts", "systemprompt", "systemmessage",
+                   "userprompt", "usermessage", "prompttemplate",
+                   "instruction", "instructions", "messages", "model",
+                   "temperature", "maxtokens", "agent", "agentid", "botid"}
+
+
+def _keys_under(node) -> list:
+    """Every key name in the structure, at any depth."""
+    out: list = []
+
+    def walk(n):
+        if isinstance(n, dict):
+            for k, v in n.items():
+                out.append(str(k))
+                walk(v)
+        elif isinstance(n, list):
+            for v in n:
+                walk(v)
+
+    walk(node)
+    return out
+
+
+def _is_send(step: Step) -> bool:
+    """Does this step put a message in front of the contact?
+
+    `Step.is_outbound` is the model's list of send types and it does not carry
+    `mms` or `send_email`, both of which appear in real exports.
+    """
+    return step.is_outbound or step.is_sms or step.is_email
+
+
+def _is_ai_step(step: Step) -> bool:
+    """A step that calls a model.
+
+    A matching TYPE is proof — `chatgpt`, `conversation_ai`, `ai_extract` are
+    action types, not prose. A matching NAME is only a hint and has to be backed
+    by the step carrying a prompt or a model setting, because builders name
+    ordinary steps after the thing they route on: "Route by AI score" is an
+    If/Else, "Tag as ai-hot" is a tag step, and reading either as a model call
+    reports a workflow as having AI steps it does not have.
+
+    A send is never one, however it is named. "Send the AI draft" is an SMS step
+    that consumes model output; reading it as the producer would let the send
+    satisfy its own guard.
+    """
+    if _is_send(step):
+        return False
+    if AI_STEP_TYPE.search(step.type):
+        return True
+    if not AI_STEP_TYPE.search(step.name):
+        return False
+    return any(_nk(k) in MODEL_CALL_KEYS for k in _keys_under(step.raw))
+
+
 ENUM_KEYS = {"enum", "options", "choices", "categories", "allowedvalues",
              "allowed", "labels", "buckets", "intents"}
 
@@ -2954,8 +3262,7 @@ def ai_branch_without_enum(acct: Account):
     """
     for wf in acct.published():
         for i, step in enumerate(wf.steps):
-            if not AI_STEP_TYPE.search(step.type) \
-                    and not AI_STEP_TYPE.search(step.name):
+            if not _is_ai_step(step):
                 continue
             if not any(s.is_branch for s in wf.steps[i + 1:]):
                 continue

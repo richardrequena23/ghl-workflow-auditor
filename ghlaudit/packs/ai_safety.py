@@ -30,7 +30,8 @@ from __future__ import annotations
 import re
 
 from ..model import FALLBACK_FILTER, Account, Step
-from ..rules import _finding, rule
+from ..rules import (AI_STEP_TYPE, MODEL_CALL_KEYS, _finding, _is_ai_step,
+                     _is_send, _keys_under, rule)
 
 
 def _nk(key) -> str:
@@ -98,62 +99,8 @@ PROMPT_KEYS = {"prompttext", "promptbody", "systemprompttext",
 # reading it as a model call put a prompt-injection finding on a notification
 # step that forwards a message to the owner. Structure is the evidence: a call
 # to a model has a prompt, or a model, or a temperature.
-MODEL_CALL_KEYS = {"prompt", "prompts", "systemprompt", "systemmessage",
-                   "userprompt", "usermessage", "prompttemplate",
-                   "instruction", "instructions", "messages", "model",
-                   "temperature", "maxtokens", "agent", "agentid", "botid"}
 
 
-def _is_send(step: Step) -> bool:
-    """Does this step put a message in front of the contact?
-
-    `Step.is_outbound` is the model's list of send types and it does not carry
-    `mms` or `send_email`, both of which appear in real exports. A send that
-    slips through here is read as the step that PRODUCED the text it is
-    sending, which lets it satisfy its own guard.
-    """
-    return step.is_outbound or step.is_sms or step.is_email
-
-
-def _keys_under(node) -> list:
-    """Every key name in the structure, at any depth."""
-    out: list = []
-
-    def walk(n):
-        if isinstance(n, dict):
-            for k, v in n.items():
-                out.append(str(k))
-                walk(v)
-        elif isinstance(n, list):
-            for v in n:
-                walk(v)
-
-    walk(node)
-    return out
-
-
-def _declares_a_model_call(step: Step) -> bool:
-    return any(_nk(k) in MODEL_CALL_KEYS for k in _keys_under(step.raw))
-
-
-def _is_ai_step(step: Step) -> bool:
-    """A step that calls a model.
-
-    A send is never one, however it is named. "Send the AI draft" is an SMS
-    step that consumes model output, and reading it as the producer would
-    make a workflow look like it contains a model call it does not have —
-    and would let the send guard itself. Past that, a matching TYPE is proof
-    (`conversation_ai`, `ai_extract`, `chatgpt` are action types, not prose)
-    while a matching NAME is only a hint, and has to be backed by the step
-    carrying a prompt or a model setting.
-    """
-    if _is_send(step):
-        return False
-    if AI_STEP_TYPE.search(step.type):
-        return True
-    if not AI_STEP_TYPE.search(step.name):
-        return False
-    return _declares_a_model_call(step)
 
 
 def _strings_under(node, keys: set) -> list:

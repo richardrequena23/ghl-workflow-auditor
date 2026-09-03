@@ -36,8 +36,13 @@ FOOTER = "\n\nExample Co, 12 Example Way, Springfield IL 62704\n{{unsubscribe}}"
 #
 # This blob deliberately carries NO address, leaving the message bodies as the
 # only place left to look — which is the situation the rule is actually for.
+# `address: ""` is load-bearing, not filler. It is how this fixture says the
+# export LOOKED for a postal address and the account genuinely has none — as
+# opposed to an export that never carried the field, which proves nothing and
+# must not produce a federal-violation finding. See _carries_footer.
 EMAIL_ACCOUNT = {"emailSettings": {"fromName": "Example Co",
-                                   "fromEmail": "hello@example.com"}}
+                                   "fromEmail": "hello@example.com",
+                                   "address": ""}}
 # The same account with the address where it belongs. Configured this way it is
 # compliant whatever the individual step bodies say.
 EMAIL_ACCOUNT_WITH_ADDRESS = {"emailSettings": {
@@ -122,6 +127,39 @@ class PostalAddressInFooter(unittest.TestCase):
                                                  TAG_TRIGGER)]))
         self.assertIn("GHL059", skips_hit([wf("Newsletter", steps,
                                               TAG_TRIGGER)]))
+
+    def test_a_half_supplied_email_config_skips_rather_than_accusing(self):
+        """The trap that produced nine false federal-violation findings.
+
+        An exporter that ships `emailSettings` carrying only sending-domain
+        keys has said nothing about the footer — but it flips this rule out of
+        its skip. Run against a real account whose postal address sits in its
+        own location record, that produced a `high` finding on every workflow
+        that sends mail. Missing data must skip; only data that went looking
+        and came back empty may accuse.
+        """
+        steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
+        partial = {"emailSettings": {"hasLcEmail": True, "domain": "",
+                                     "defaultEmailService": ""}}
+        self.assertNotIn("GHL059", rules_hit([wf("Newsletter", steps,
+                                                 TAG_TRIGGER)], **partial))
+        self.assertIn("GHL059", skips_hit([wf("Newsletter", steps,
+                                              TAG_TRIGGER)], **partial))
+
+    def test_an_empty_address_field_is_evidence_the_export_looked(self):
+        """`address: ""` means the account has none — that IS a violation."""
+        steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
+        looked = {"emailSettings": {"fromName": "Example Co", "address": ""}}
+        self.assertIn("GHL059", rules_hit([wf("Newsletter", steps,
+                                              TAG_TRIGGER)], **looked))
+
+    def test_supplied_templates_alone_are_enough_to_run(self):
+        """A shared template is where the footer lives, so it counts."""
+        steps = [email("One", self.LONG), wait(), email("Two", self.LONG)]
+        tpl = {"emailSettings": {"fromName": "Example Co"},
+               "emailTemplates": [{"id": "t1", "name": "Base footer"}]}
+        self.assertIn("GHL059", rules_hit([wf("Newsletter", steps,
+                                              TAG_TRIGGER)], **tpl))
 
     def test_an_address_in_the_account_footer_clears_every_workflow(self):
         """Where the address belongs. Bodies need not repeat it."""
