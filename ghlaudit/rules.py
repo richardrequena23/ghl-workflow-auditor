@@ -1491,6 +1491,39 @@ def sms_fallback_filter(acct: Account):
                      "worth replying to.")
 
 
+def _on_shared_sender(settings) -> bool:
+    """Is this account sending through LeadConnector's managed infrastructure?
+
+    `hasLcEmail` is the flag GoHighLevel sets when the location sends through
+    LeadConnector rather than a sending domain of its own. It appears at the
+    top level of the location and again inside `emailIsvSettings`, so this
+    looks at any depth. A location that HAS configured its own domain is not
+    on the shared sender even if the flag is still set, so a non-empty
+    `domain` wins.
+    """
+    if not isinstance(settings, dict):
+        return False
+    flag = False
+    dedicated = False
+
+    def walk(node):
+        nonlocal flag, dedicated
+        if isinstance(node, dict):
+            for k, v in node.items():
+                key = str(k).lower()
+                if key == "haslcemail" and v is True:
+                    flag = True
+                if key == "domain" and isinstance(v, str) and v.strip():
+                    dedicated = True
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(settings)
+    return flag and not dedicated
+
+
 @rule("GHL025", "Email that will not land", "high", "compliance", "deliverability")
 def email_deliverability(acct: Account):
     """Unsubscribe and sending-domain authentication.
@@ -1590,6 +1623,41 @@ def email_deliverability(acct: Account):
     senders = [w for w in acct.published() if w.email_steps]
     if senders and not inv.verified_email_domains:
         listed = ", ".join(d["domain"] for d in inv.email_domains) or "none at all"
+
+        # ⛔ "No dedicated domain" is NOT the same as "unauthenticated", and
+        # saying so to an account on LeadConnector's managed sending would be
+        # a high-severity claim that is simply untrue. HighLevel's own
+        # documentation states DMARC is not required to send from the shared
+        # LeadConnector domains — because LC authenticates that domain itself,
+        # with its own SPF and DKIM. The mail passes; what it does not do is
+        # align with the client's own domain, and it rides shared-IP
+        # reputation it does not control. That is a real problem, worth
+        # reporting, and it is a different and lesser one.
+        if _on_shared_sender(inv.email_settings):
+            yield Finding(
+                rule="GHL025", severity="medium", workflow="(account)",
+                step="LeadConnector shared sending", category="deliverability",
+                reach=sum(len(w.email_steps) for w in senders),
+                title="Sending on LeadConnector's shared domain, with no "
+                      "domain of its own",
+                symptom=f"{len(senders)} published workflows send email and "
+                        "this account has no dedicated sending domain, so it "
+                        "sends through LeadConnector's shared infrastructure. "
+                        "That mail IS authenticated — LeadConnector signs it "
+                        "with its own SPF and DKIM, which is why the platform "
+                        "does not require DMARC to send this way. What it "
+                        "cannot do is align the From address with this "
+                        "business's own domain, and its reputation is shared "
+                        "with every other account sending from the same pool.",
+                cost="Deliverability rises and falls on strangers' sending "
+                     "habits, and there is no reputation being built that this "
+                     "business would keep if it left the platform.",
+                fix="Set up a dedicated sending subdomain and complete its DNS "
+                    "verification when volume justifies it. Until then this is "
+                    "a known trade-off rather than a defect — nothing is "
+                    "failing authentication today.")
+            return
+
         yield Finding(
             rule="GHL025", severity="high", workflow="(account)",
             step=listed, category="deliverability",
