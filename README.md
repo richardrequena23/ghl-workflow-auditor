@@ -360,7 +360,7 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,060 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,062 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
 account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.

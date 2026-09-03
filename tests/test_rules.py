@@ -906,6 +906,33 @@ class EmailDeliverabilityRules(unittest.TestCase):
                               "value": "noshow"}]}]
         self.assertIn("GHL025", rules_hit([wf("No Show Recovery", steps, trig)]))
 
+    def test_a_form_fill_chase_is_marketing_not_a_transaction(self):
+        """A form submission is a lead capture, not a receipt.
+
+        `form_submitted` sat in the transactional trigger list, so any
+        published sequence that fired off a form and happened to send two
+        emails was exempted from the unsubscribe check. On a real account that
+        hid "Speed to Lead - 5 Minute Response" — instant SMS, backup email,
+        booking link, last touch, no unsubscribe token anywhere — which is a
+        cold chase by any reading. Google's exemption covers transactions and
+        reservations; nothing about a form fill is either.
+        """
+        steps = [email("Backup email", "Just checking you saw this."), wait(),
+                 email("Last touch", "Last one from me.")]
+        trig = [{"type": "form_submitted", "name": "Enquiry"}]
+        self.assertIn("GHL025", rules_hit([wf("Speed to Lead", steps, trig)]))
+
+    def test_an_order_form_is_still_transactional(self):
+        """Removing form_submitted must not take order forms with it.
+
+        `order_form_submitted` names an actual purchase, and it stays exempt
+        by matching on "order" rather than on "form".
+        """
+        steps = [email("Receipt", "Thanks for your order."), wait(),
+                 email("On its way", "Your order has shipped.")]
+        trig = [{"type": "order_form_submitted", "name": "Order form"}]
+        self.assertNotIn("GHL025", rules_hit([wf("Order receipt", steps, trig)]))
+
     def test_config_can_mark_a_workflow_transactional(self):
         steps = [email("Receipt", "Your receipt"), wait(),
                  email("Receipt copy", "Copy of your receipt")]

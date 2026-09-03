@@ -1524,9 +1524,19 @@ def email_deliverability(acct: Account):
         # A third email is where it stops being one transaction. By then the
         # workflow is chasing — "Same-day rebook / Second touch / Close-out" is
         # a campaign whatever triggered it, and that one still gets flagged.
+        # ⛔ `form_submitted` does NOT belong in this list, and used to.
+        # Google's exemption is for transactions and reservations — receipts,
+        # order and payment confirmations, appointment confirmations. A form
+        # submission is a lead capture. The mail that follows it is the
+        # definition of marketing, and on a real account this exemption hid a
+        # published cold-chase ("Speed to Lead - 5 Minute Response": instant
+        # SMS, backup email, booking link, last touch) from a compliance rule,
+        # purely because it sent exactly two emails off a form trigger. An
+        # order form still qualifies: `order_form_submitted` matches on
+        # "order", which is the trigger that names an actual transaction.
         transactional = any(
             any(k in t.canonical_type() for k in
-                ("appointment", "order", "payment", "invoice", "form_submitted"))
+                ("appointment", "order", "payment", "invoice"))
             for t in wf.triggers) and len(emails) <= 2
         if transactional:
             continue
