@@ -152,7 +152,11 @@ What the law and the carriers require of you. These are the findings that carry 
 
 **Guard tag stops more than the alert it guards** — `critical` · tags: `replies`, `opt-out`
 
-> ⚠️ This check did not fire on the example account, so no sample output could be generated for it. That is a gap in the fixture, not a passing grade — see the holes section at the end.
+*What it looks like:* This workflow runs on every inbound reply. Its 'Where are they in the journey?' branch 'Already engaged - conversation is live' matches on the tag 'engaged' and does nothing that acts on the contact. The path it shadows is the one that does the real work — 2 step(s) there handle an opt-out or a wrong number — and that path's own step 'Tag as engaged' is what adds 'engaged' in the first place. So the first reply falls through, gets read, and arms the guard; every reply after it matches the guard and stops. Nothing triggered by a reply ever clears 'engaged', so it never re-arms inside a live conversation. A contact who asks to stop in their second message is never heard.
+
+*The fix:* Move the guard down so it wraps only the alert it was meant to deduplicate, and let every reply reach the classification and opt-out steps. Then test it: reply twice from one contact and confirm the second reply is still read.
+
+*What it costs:* Every opt-out after a contact's first message is missed, and the account keeps sending. It is the most expensive kind of silent failure: the guard was added on purpose, it looks like good hygiene, and it reads as working right up until somebody complains.
 
 ### GHL017
 
@@ -1183,7 +1187,7 @@ Things that exist and do nothing. Not urgent, but every one of them is a thing a
 ## Coverage of this page
 
 - Rules in the catalog: **102**
-- Rules with sample output above: **101**
-- ⚠️ Rules that did not fire on the example: GHL102 — the fixture needs a case for these.
-- ⚠️ Checks that skipped for want of account context: GHL102
+- Rules with sample output above: **102**
+- Rules that did not fire on the example: **none**. Every check in the catalog is demonstrated by the shipped fixture.
+- Checks that skipped for want of account context: **none**.
 
