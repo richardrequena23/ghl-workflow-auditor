@@ -43,6 +43,12 @@ def findings_for(rule_id, workflows, custom_values=None, config=None, **extra):
             if f.rule == rule_id]
 
 
+def skips_hit(workflows, custom_values=None, config=None, **extra):
+    return {sk.rule for sk in
+            run_all(Account.load(bundle(workflows, custom_values, **extra),
+                                 config=config))[1]}
+
+
 def wf(name, steps, triggers=(), status="published", settings=None):
     return {"_id": name, "name": name, "status": status, "steps": list(steps),
             "triggers": list(triggers), "settings": settings or {}}
@@ -440,6 +446,80 @@ class ExampleFragment(unittest.TestCase):
         strays = [w.name for w in self.acct.workflows
                   if not w.name.startswith("Compliance SMS - ")]
         self.assertEqual(strays, [])
+
+
+def tag_step(name, *tags):
+    return {"type": "add_contact_tag", "name": name, "meta": {"tags": list(tags)}}
+
+
+def gate(name, *tags):
+    """An if/else that actually branches on a tag."""
+    return {"type": "if_else", "name": name,
+            "meta": {"conditions": [{"field": "tag", "value": t} for t in tags]}}
+
+
+class OptOutRecordedNeverEnforced(unittest.TestCase):
+    """GHL101 — the account writes the opt-out down and keeps texting."""
+
+    def account(self, extra_steps=(), triggers=(), second=None):
+        # The sender carries a branch on an UNRELATED tag. That matters: the
+        # rule only speaks when the export demonstrably contains conditions,
+        # so a fixture with no branches at all tests the Skip path, not the
+        # finding.
+        handler = wf("Reply Handler",
+                     [sms("Ask"), tag_step("Tag intent", "do-not-contact"),
+                      *extra_steps],
+                     list(triggers))
+        sender = second or wf("Nurture", [gate("Already engaged?", "engaged"),
+                                          sms("Touch 1"), sms("Touch 2")])
+        return [handler, sender]
+
+    def test_it_fires_when_nothing_reads_the_tag(self):
+        self.assertIn("GHL101", rules_hit(self.account()))
+
+    def test_it_is_quiet_when_a_branch_reads_the_tag(self):
+        self.assertNotIn("GHL101", rules_hit(
+            self.account([gate("Suppressed?", "do-not-contact")])))
+
+    def test_it_is_quiet_when_a_trigger_filter_reads_the_tag(self):
+        sender = wf("Nurture", [gate("Already engaged?", "engaged"), sms("Touch 1")],
+                    [trigger("contact_tag_added", "Entry",
+                             [{"field": "tag", "value": "do-not-contact"}])])
+        self.assertNotIn("GHL101", rules_hit(self.account(second=sender)))
+
+    def test_a_notification_naming_the_tag_is_not_a_gate(self):
+        """The bug that silenced this rule on the account it was written from.
+
+        `internal_notification` contains the substring "if" — not-IF-ication —
+        so a substring test for branch-ish step types read every rep alert as a
+        condition. The alert that says "opt-out to honour" names the tag, so
+        the account appeared to read its own opt-out and the rule went quiet on
+        a live compliance hole.
+        """
+        alert = {"type": "internal_notification", "name": "Email the rep",
+                 "meta": {"body": "Opt-out to honour: tagged do-not-contact"}}
+        note = {"type": "add_notes", "name": "Compliance note",
+                "meta": {"body": "Contact asked to stop. Tagged do-not-contact."}}
+        self.assertIn("GHL101", rules_hit(self.account([alert, note])))
+
+    def test_native_dnd_counts_as_enforcement(self):
+        """Flipping the platform switch stops the whole account at once."""
+        dnd = {"type": "update_contact", "name": "Switch on DND",
+               "meta": {"dnd": True}}
+        self.assertNotIn("GHL101", rules_hit(self.account([dnd])))
+
+    def test_an_ordinary_tag_is_not_a_suppression_tag(self):
+        handler = wf("Reply Handler",
+                     [sms("Ask"), tag_step("Tag intent", "engaged")])
+        self.assertNotIn("GHL101", rules_hit(
+            [handler, wf("Nurture", [gate("Booked?", "call-booked"), sms("Touch")])]))
+
+    def test_it_skips_when_the_export_carries_no_conditions_at_all(self):
+        """No branches and no trigger filters — unread and unreadable look alike."""
+        only = [wf("Reply Handler",
+                   [sms("Ask"), tag_step("Tag intent", "do-not-contact")])]
+        self.assertNotIn("GHL101", rules_hit(only))
+        self.assertIn("GHL101", skips_hit(only))
 
 
 if __name__ == "__main__":  # pragma: no cover

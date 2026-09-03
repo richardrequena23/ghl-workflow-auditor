@@ -34,7 +34,7 @@ import json
 import re
 
 from ..model import Account, Step, Workflow
-from ..rules import _finding, rule
+from ..rules import Skip, _finding, rule
 
 
 def _nk(key) -> str:
@@ -1178,3 +1178,142 @@ def texts_stacked_inside_one_day(acct: Account):
             cost="The contacts this burns are the ones who opted in. An opt-out "
                  "is permanent, and the complaint rate behind it is what gets "
                  "the whole account's texts filtered.")
+
+
+SUPPRESSION_TAG = re.compile(
+    r"(do[\s_-]*not[\s_-]*(contact|call|text|email|disturb)"
+    r"|(^|[\s_-])dnc([\s_-]|$)"
+    r"|opt(ed)?[\s_-]*out"
+    r"|unsubscrib"
+    r"|blacklist"
+    r"|suppress)", re.I)
+
+# Step types that GATE a contact's path. A tag only enforces anything if
+# something branches on it or filters entry on it. Deliberately excludes note
+# bodies and message copy: "we tagged them do-not-contact" written into a note
+# is a RECORD of the opt-out, not a thing that stops the next send.
+#
+# ⛔ Matched precisely, NOT by substring. "internal_notification" contains
+# "if" — not-IF-ication — so a substring test read every rep-alert step as a
+# branch condition, and the alert that says "opt-out to honour" then counted as
+# the account reading its own opt-out tag. The rule went silent on the exact
+# account it was written from. Same family of bug as "stage" containing "tag".
+GATING_TYPES = frozenset({
+    "if_else", "ifelse", "if", "condition", "conditional", "branch",
+    "split", "filter", "decision", "goal", "wait_condition"})
+
+
+def _is_gate(step_type: str) -> bool:
+    t = (step_type or "").lower()
+    return (t in GATING_TYPES
+            or t.startswith("if_")
+            or t.startswith("condition")
+            or t.endswith("_condition")
+            or t.endswith("_branch"))
+
+# Keys GoHighLevel uses for the native Do-Not-Disturb switch. An account that
+# flips native DND on an opt-out really has enforced it account-wide, and the
+# tag beside it is then just a label — so this rule stays quiet.
+DND_KEY = re.compile(r"\b(dnd|do_?not_?disturb)\b", re.I)
+
+
+def _sets_native_dnd(acct: Account) -> bool:
+    for wf in acct.workflows:
+        for step in wf.steps:
+            if DND_KEY.search(step.type):
+                return True
+            for key, value in (step.config() or {}).items():
+                if DND_KEY.search(str(key)) and value not in (None, "", False, "false"):
+                    return True
+    return False
+
+
+@rule("GHL101", "An opt-out is recorded and never enforced", "high",
+      "compliance", "sms", "opt-out")
+def optout_recorded_never_enforced(acct: Account):
+    """A suppression tag that nothing branches on.
+
+    The account writes the opt-out down and then keeps texting. This is not the
+    same check as GHL017 (does the SMS carry opt-out language) or GHL072 (does
+    something switch an opt-out back off) — here the contact asked to stop, the
+    account correctly recorded it, and no workflow ever reads the record.
+
+    Found on a real account, and the shape is worth stating because it looks
+    handled from the inside. The reply handler tagged the contact
+    `do-not-contact`, wrote a compliance note, emailed the rep "opt-out to
+    honour", and pulled them from three named workflows. Ten other published
+    workflows never checked the tag, nothing removed it, and no step set the
+    native DND switch — so honouring the opt-out came down to a person reading
+    an email. The tag existed in exactly one place in the whole export: the
+    step that created it.
+
+    A tag is only a gate if something branches on it. This looks at branch
+    conditions and trigger filters, and at nothing else — a note body naming
+    the tag is a record of the opt-out, not an enforcement of it, and counting
+    it would let the most common way of getting this wrong pass silently.
+    """
+    if _sets_native_dnd(acct):
+        return  # enforced account-wide at the platform level; the tag is a label
+
+    written: dict = {}
+    for wf in acct.workflows:
+        for step in wf.steps:
+            for tag in step.tags_added():
+                key = str(tag).strip().lower()
+                if key and SUPPRESSION_TAG.search(key):
+                    written.setdefault(key, []).append((wf, step))
+    if not written:
+        return
+
+    gates = []
+    for wf in acct.workflows:
+        for step in wf.steps:
+            if _is_gate(step.type):
+                gates.append(step.text())
+        for trg in wf.triggers:
+            gates.append(trg.filter_blob())
+
+    if not gates:
+        yield Skip(
+            rule="GHL101",
+            title="An opt-out is recorded and never enforced",
+            reason="This export carries no branch conditions and no trigger "
+                   "filters, so whether anything reads the opt-out tag cannot "
+                   "be determined. An unread tag and a tag read by a condition "
+                   "this file does not contain look identical.",
+            needs="workflow branch conditions (if/else steps) and trigger "
+                  "filters in the export",
+            category="compliance")
+        return
+
+    blob = " ".join(gates).lower()
+    senders = [w for w in acct.published() if w.sms_steps or w.email_steps]
+
+    for tag, sites in sorted(written.items()):
+        if tag in blob:
+            continue
+        wf, step = sites[0]
+        where = f"{len(sites)} step{'s' if len(sites) != 1 else ''}"
+        yield _finding(
+            "GHL101", "high", wf,
+            f"'{tag}' is written when someone opts out, and no workflow ever "
+            f"reads it",
+            f"{where} in this account put the '{tag}' tag on a contact, and "
+            f"not one branch condition or trigger filter anywhere in the "
+            f"account tests for it. {len(senders)} published workflows send "
+            f"messages and none of them check it before sending. Nothing sets "
+            f"the native Do-Not-Disturb switch either, so the record of the "
+            f"opt-out exists and nothing acts on it — the contact who asked to "
+            f"stop keeps receiving everything except the specific workflows "
+            f"that were named by hand at the moment they asked.",
+            f"Put a check for '{tag}' at the top of every workflow that sends, "
+            f"or on each send step — or, better, have the opt-out set the "
+            f"contact's Do-Not-Disturb switch, which stops the whole account "
+            f"at once and cannot be forgotten in the next workflow somebody "
+            f"builds. Then test it: tag a contact and confirm nothing sends.",
+            step=step.name or step.type,
+            category="compliance",
+            cost="Every message to someone who asked to stop is its own "
+                 "statutory claim, and the tag is a written record that the "
+                 "account knew. It is the one compliance failure that is "
+                 "harder to defend for having been detected correctly.")

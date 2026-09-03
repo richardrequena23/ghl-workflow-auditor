@@ -1583,6 +1583,57 @@
       "settings": {}
     },
     {
+      "_id": "wf_cs_optout_unenforced",
+      "name": "Compliance SMS - Reply Router",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "customer_replied",
+          "name": "Contact replied",
+          "filters": []
+        }
+      ],
+      "settings": {},
+      "_note": "GHL101's fixture. The router records the opt-out and nothing in the whole example ever branches on the tag. The rep alert names the tag on purpose: internal_notification contains the substring 'if', and a loose gate test read that as the account reading its own opt-out.",
+      "steps": [
+        {
+          "type": "if_else",
+          "name": "Did they ask to stop?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "message",
+                "value": "stop"
+              }
+            ]
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Mark the opt-out",
+          "meta": {
+            "tags": [
+              "do-not-contact"
+            ]
+          }
+        },
+        {
+          "type": "add_notes",
+          "name": "Compliance note",
+          "meta": {
+            "body": "Contact asked to stop. Tagged do-not-contact."
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Email the rep - opt-out to honour",
+          "meta": {
+            "body": "Opt-out to honour: this contact is tagged do-not-contact."
+          }
+        }
+      ]
+    },
+    {
       "_id": "di-web-lead-intake",
       "name": "Data Integrity Demo - Web Lead Intake",
       "status": "published",

@@ -1,7 +1,7 @@
 {
   "accounts": {
     "account-bundle-2026-09-01": {
-      "findings": 77,
+      "findings": 53,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-01.json",
       "workflows": 13
     },
@@ -11,7 +11,7 @@
       "workflows": 13
     },
     "requena-live-sep03": {
-      "findings": 36,
+      "findings": 37,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-03.json",
       "workflows": 13
     }
@@ -452,6 +452,16 @@
       "severity": "medium",
       "step": "Where are they in the journey? > Live lead - AI reads the reply > Route by reply intent > BOOKING - they want a time",
       "title": "Conditions nested 4 deep \u2014 up to 16 different paths",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
+    },
+    "29687cef30850da9": {
+      "account": "requena-live-sep03",
+      "note": "Verified independently twice, Sep-03 2026, before the rule was written. 'do-not-contact' is added by exactly ONE step (Reply Handler / Tag intent) and read by NOTHING: no if_else condition, no trigger filter, anywhere in the account. It is never removed. The string occurs 4 times in the whole export - the add-tag step, a compliance NOTE, and two rep notifications, none of which gate a send. No step sets native DND either ('dnd' appears only in that note and those notifications), so honouring an opt-out depends on a human reading an email, and only 3 of 13 workflows are stopped by the named remove_from_workflow steps. 10 published workflows send messages and none check the tag. Not covered by GHL017 (opt-out LANGUAGE in the SMS), GHL061 (bounce/complaint suppression) or GHL072 (opt-out switched back OFF) - all checked.",
+      "rule": "GHL101",
+      "severity": "high",
+      "step": "Tag intent",
+      "title": "'do-not-contact' is written when someone opts out, and no workflow ever reads it",
       "verdict": "real",
       "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
@@ -972,6 +982,16 @@
       "verdict": "real",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
+    "871ab06076b1e2d4": {
+      "account": "account-bundle-2026-09-01",
+      "note": "Verified Sep-03 2026 against the account-bundle-2026-09-01 export. 'ai-qualify' is added by nothing in that bundle - checked every add_contact_tag step in every workflow - and the workflow is published, sends 2 messages, and has no trigger but that tag. Note the rule then went QUIET on Sep-03: 'Lead Intake - Qualify, Route & Notify / Tag as qualified' now adds ai-qualify, so the source exists and GHL018 correctly stopped reporting it. The Sep-01 finding was true when Sep-01 was exported.",
+      "rule": "GHL018",
+      "severity": "high",
+      "step": "",
+      "title": "Published, sends 2 messages, and the only way in is 'ai-qualify' \u2014 which nothing here adds",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
     "8785804d575f2e2d": {
       "account": "account-bundle-2026-09-01",
       "note": "CORRECTED Sep-02 2026. FALSE POSITIVE, now FIXED. 'Instant reply SMS' sits behind a ONE MINUTE hold ('Hold 1 minute for the junk filter'), and the finding claimed it 'goes out at whatever hour the trigger fired... three days later'. A one-minute pause lands in the same minute; the lead who submitted the form at 11:40pm is waiting for that reply. The rule's own docstring said flagging speed-to-lead for answering fast would be noise, and the implementation did exactly that. FIXED: Step.wait_minutes() added; a wait under an hour no longer counts as an hour shift. An unbounded reply-wait still does, so Speed to Lead's later 'Second touch' and Missed Call's 'Last touch' remain flagged.",
@@ -1352,6 +1372,16 @@
       "verdict": "real",
       "workflow": "(account)"
     },
+    "bd927f6355774553": {
+      "account": "account-bundle-2026-09-01",
+      "note": "Verified Sep-03 2026 against the account-bundle-2026-09-01 export. 'job-complete' is added by nothing in that bundle - checked every add_contact_tag step in every workflow - and the workflow is published, sends 2 messages, and has no trigger but that tag. Still true on the Sep-03 export as well - job-complete has no source in either. Open with Richard: build a source, or declare it external via external_tags.",
+      "rule": "GHL018",
+      "severity": "high",
+      "step": "",
+      "title": "Published, sends 2 messages, and the only way in is 'job-complete' \u2014 which nothing here adds",
+      "verdict": "real",
+      "workflow": "Referral Request - Two Asks, Then Stop"
+    },
     "be79829b399c1cd7": {
       "account": "account-bundle-2026-09-01",
       "note": "Verified Sep-02 2026: the flagged sends open with a bare {{contact.first_name}} and no fallback filter. Real.",
@@ -1371,6 +1401,16 @@
       "title": "1 marketing email with no unsubscribe link",
       "verdict": "real",
       "workflow": "AI Lead Qualification - Score, Route & Sync"
+    },
+    "c1e50bcd70676553": {
+      "account": "account-bundle-2026-09-01",
+      "note": "Verified Sep-03 2026 against the account-bundle-2026-09-01 export. 'job-complete' is added by nothing in that bundle - checked every add_contact_tag step in every workflow - and the workflow is published, sends 2 messages, and has no trigger but that tag. Still true on the Sep-03 export as well - job-complete has no source in either. Open with Richard: build a source, or declare it external via external_tags.",
+      "rule": "GHL018",
+      "severity": "high",
+      "step": "",
+      "title": "Published, sends 2 messages, and the only way in is 'job-complete' \u2014 which nothing here adds",
+      "verdict": "real",
+      "workflow": "Review Request After Close"
     },
     "c320a27015bc3f7a": {
       "account": "requena-live-sep03",
@@ -1521,6 +1561,16 @@
       "title": "1 message can fire at any hour of the night",
       "verdict": "real",
       "workflow": "Missed Call Text Back"
+    },
+    "d9157c7e72ffbe80": {
+      "account": "account-bundle-2026-09-01",
+      "note": "Verified independently twice, Sep-03 2026, before the rule was written. 'do-not-contact' is added by exactly ONE step (Reply Handler / Tag intent) and read by NOTHING: no if_else condition, no trigger filter, anywhere in the account. It is never removed. The string occurs 4 times in the whole export - the add-tag step, a compliance NOTE, and two rep notifications, none of which gate a send. No step sets native DND either ('dnd' appears only in that note and those notifications), so honouring an opt-out depends on a human reading an email, and only 3 of 13 workflows are stopped by the named remove_from_workflow steps. 10 published workflows send messages and none check the tag. Not covered by GHL017 (opt-out LANGUAGE in the SMS), GHL061 (bounce/complaint suppression) or GHL072 (opt-out switched back OFF) - all checked.",
+      "rule": "GHL101",
+      "severity": "high",
+      "step": "Tag intent",
+      "title": "'do-not-contact' is written when someone opts out, and no workflow ever reads it",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
     "dab19fa40178d78b": {
       "account": "requena-live-sep03",

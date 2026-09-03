@@ -24,7 +24,12 @@
         {
           "type": "form_submitted",
           "name": "Quote request",
-          "filters": [{"field": "form", "value": "Quote request"}]
+          "filters": [
+            {
+              "field": "form",
+              "value": "Quote request"
+            }
+          ]
         }
       ],
       "steps": [
@@ -38,7 +43,9 @@
         {
           "type": "wait",
           "name": "Wait 2 days",
-          "meta": {"delay": "2 days"}
+          "meta": {
+            "delay": "2 days"
+          }
         },
         {
           "type": "sms",
@@ -49,7 +56,10 @@
         }
       ],
       "settings": {
-        "sendingWindow": {"start": "07:00", "end": "22:00"},
+        "sendingWindow": {
+          "start": "07:00",
+          "end": "22:00"
+        },
         "timezone": "contact"
       }
     },
@@ -61,7 +71,12 @@
         {
           "type": "form_submitted",
           "name": "Renewal form",
-          "filters": [{"field": "form", "value": "Renewal"}]
+          "filters": [
+            {
+              "field": "form",
+              "value": "Renewal"
+            }
+          ]
         }
       ],
       "steps": [
@@ -74,7 +89,10 @@
         }
       ],
       "settings": {
-        "sendingWindow": {"start": "08:00", "end": "20:30"},
+        "sendingWindow": {
+          "start": "08:00",
+          "end": "20:30"
+        },
         "timezone": "contact"
       }
     },
@@ -86,7 +104,12 @@
         {
           "type": "form_submitted",
           "name": "Standby signup",
-          "filters": [{"field": "form", "value": "Standby signup"}]
+          "filters": [
+            {
+              "field": "form",
+              "value": "Standby signup"
+            }
+          ]
         }
       ],
       "steps": [
@@ -108,7 +131,12 @@
         {
           "type": "appointment_status",
           "name": "Appointment confirmed",
-          "filters": [{"field": "appointment_status", "value": "confirmed"}]
+          "filters": [
+            {
+              "field": "appointment_status",
+              "value": "confirmed"
+            }
+          ]
         }
       ],
       "steps": [
@@ -130,7 +158,12 @@
         {
           "type": "contact_tag_added",
           "name": "Tag added",
-          "filters": [{"field": "tag", "value": "sms-opt-in"}]
+          "filters": [
+            {
+              "field": "tag",
+              "value": "sms-opt-in"
+            }
+          ]
         }
       ],
       "steps": [
@@ -152,7 +185,12 @@
         {
           "type": "form_submitted",
           "name": "Pricing page form",
-          "filters": [{"field": "form", "value": "Pricing"}]
+          "filters": [
+            {
+              "field": "form",
+              "value": "Pricing"
+            }
+          ]
         }
       ],
       "steps": [
@@ -166,7 +204,9 @@
         {
           "type": "wait",
           "name": "Wait 2 hours",
-          "meta": {"delay": "2 hours"}
+          "meta": {
+            "delay": "2 hours"
+          }
         },
         {
           "type": "sms",
@@ -178,7 +218,10 @@
         {
           "type": "wait",
           "name": "Wait 3 hours",
-          "meta": {"value": 3, "unit": "hours"}
+          "meta": {
+            "value": 3,
+            "unit": "hours"
+          }
         },
         {
           "type": "sms",
@@ -189,6 +232,57 @@
         }
       ],
       "settings": {}
+    },
+    {
+      "_id": "wf_cs_optout_unenforced",
+      "name": "Compliance SMS - Reply Router",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "customer_replied",
+          "name": "Contact replied",
+          "filters": []
+        }
+      ],
+      "settings": {},
+      "_note": "GHL101's fixture. The router records the opt-out and nothing in the whole example ever branches on the tag. The rep alert names the tag on purpose: internal_notification contains the substring 'if', and a loose gate test read that as the account reading its own opt-out.",
+      "steps": [
+        {
+          "type": "if_else",
+          "name": "Did they ask to stop?",
+          "meta": {
+            "conditions": [
+              {
+                "field": "message",
+                "value": "stop"
+              }
+            ]
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Mark the opt-out",
+          "meta": {
+            "tags": [
+              "do-not-contact"
+            ]
+          }
+        },
+        {
+          "type": "add_notes",
+          "name": "Compliance note",
+          "meta": {
+            "body": "Contact asked to stop. Tagged do-not-contact."
+          }
+        },
+        {
+          "type": "internal_notification",
+          "name": "Email the rep - opt-out to honour",
+          "meta": {
+            "body": "Opt-out to honour: this contact is tagged do-not-contact."
+          }
+        }
+      ]
     }
   ]
 }

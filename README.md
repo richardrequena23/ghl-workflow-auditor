@@ -8,25 +8,24 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-100-19D3B0)
+![rules](https://img.shields.io/badge/rules-101-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
-Account health: 20/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
+Account health: 15/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
+69 workflows audited. 101 root causes showing up in 218 places: 18 critical, 119 high, 68 medium, 13 low  [101 of 101 checks ran]
 
-68 workflows audited. 222 findings: 18 critical, 114 high, 68 medium, 22 low  [100 of 100 checks ran]
-
-  Compliance        58/100  [##############..........]  39 findings
-  Deliverability    82/100  [####################....]  16 findings
-  Routing           31/100  [#######.................]  102 findings
-  Hygiene           56/100  [#############...........]  47 findings
-  Dead weight       91/100  [######################..]  18 findings
+  Compliance        13/100  [###.....................]  41 findings
+  Deliverability    18/100  [####....................]  16 findings
+  Routing           15/100  [####....................]  100 findings
+  Hygiene           16/100  [####....................]  43 findings
+  Dead weight       18/100  [####....................]  18 findings
 
 Fix in this order — ranked by what each one costs:
   1. [GHL019] Wait for an event with no timeout — 3 messages below it never send  (Speed to Lead - 5 Minute Response)
-  2. [GHL028] 3 reminders keep sending after a cancel or reschedule  (Strategy Call - Booking & Reminders)
+  2. [GHL028] 3 reminders keep sending after a cancel or reschedule  (4 places in 4 workflows)
   3. [GHL001] Appointment trigger fires on every status change  (No Show Recovery)
   4. [GHL002] Call trigger is not narrowed to missed calls  (Missed Call Text Back)
   5. [GHL014] Tag loop: Hot Lead Alert <-> Long Term Nurture  (Hot Lead Alert)
@@ -360,15 +359,15 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,067 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,074 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
-account trips **all 100 rules** with **zero checks skipped**, and two tests enforce
+account trips **all 101 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
 
 Every rule also went through an adversarial pass whose only job was to find a *correct*
 configuration it would wrongly flag, and to feed it malformed exports — `steps: null`,
 a trigger that is a bare string, a settings value that is a list — because a traceback
-mid-audit stops the other 99 checks. What that pass found got fixed and became a
+mid-audit stops the other 100 checks. What that pass found got fixed and became a
 regression test; that is most of why the suite is the size it is.
 
 ### The measured rate
@@ -387,8 +386,8 @@ marked `real` or `false_positive`, with a note saying why. `scripts/precision_re
 
 | | judged | false positives | rate |
 |---|---|---|---|
-| **Live** — what the catalog emits today (`--summary --live`) | 88 | **0** | **0.0%** |
-| Lifetime — every finding ever recorded, including ones no longer emitted | 181 | 39 | 21.5% |
+| **Live** — what the catalog emits today (`--summary --live`) | 90 | **0** | **0.0%** |
+| Lifetime — every finding ever recorded, including ones no longer emitted | 186 | 39 | 21.0% |
 
 The lifetime figure is a history of this catalog's mistakes, not a description of it. It
 counts GHL007's twenty-two false positives, which were diagnosed, rewritten, and now fire
@@ -447,7 +446,7 @@ person.** That is one account's worth of evidence wearing two labels, and `--sum
 itself. A third export of the same account would not fix it; a different business would.
 It is not a population statistic and no copy may present it as one.
 
-**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 100 checks with the
+**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 101 checks with the
 symptom, the fix and what each one costs. It is generated from a real run against the
 example account, so it cannot drift from the code.
 
