@@ -522,5 +522,77 @@ class OptOutRecordedNeverEnforced(unittest.TestCase):
         self.assertIn("GHL101", skips_hit(only))
 
 
+def branch(bid, name, tag):
+    return {"id": bid, "name": name, "operator": "and",
+            "segments": [{"operator": "and", "conditions": [
+                {"conditionType": "contact_detail", "conditionSubType": "tags",
+                 "conditionOperator": "index-of-true", "conditionValue": [tag]}]}]}
+
+
+def router(guard_tag="engaged", guard_kids=None, else_kids=None):
+    """A reply router: one guarded branch, one fall-through."""
+    guard_kids = guard_kids if guard_kids is not None else [
+        {"type": "add_notes", "name": "Log it quietly", "id": "n1",
+         "parentKey": "B1", "next": None, "meta": {"body": "Replied again."}}]
+    else_kids = else_kids if else_kids is not None else [
+        {"type": "add_contact_tag", "name": "Tag as engaged", "id": "e1",
+         "parentKey": "B2", "meta": {"tags": [guard_tag]}},
+        {"type": "add_contact_tag", "name": "Tag intent", "id": "e2",
+         "parentKey": "B2", "meta": {"tags": ["do-not-contact"]}},
+        {"type": "remove_from_workflow", "name": "Stop the nurture", "id": "e3",
+         "parentKey": "B2", "meta": {}}]
+    gate_step = {"type": "if_else", "name": "Where are they in the journey?",
+                 "id": "G", "parentKey": None, "next": ["B1", "B2"],
+                 "meta": {"branches": [branch("B1", "Already engaged", guard_tag)],
+                          "noneBranchName": "Live lead"}}
+    return wf("Reply Handler", [gate_step] + list(guard_kids) + list(else_kids),
+              [trigger("customer_replied", "Replied")])
+
+
+class GuardTagSwallowsCompliance(unittest.TestCase):
+    """GHL102 — the guard that makes opt-out handling one-shot."""
+
+    def test_it_fires_on_a_self_armed_guard_shadowing_the_opt_out(self):
+        self.assertIn("GHL102", rules_hit([router()]))
+
+    def test_it_is_quiet_when_the_guarded_branch_handles_the_opt_out_itself(self):
+        kids = [{"type": "add_contact_tag", "name": "Tag intent", "id": "n1",
+                 "parentKey": "B1", "meta": {"tags": ["do-not-contact"]}}]
+        self.assertNotIn("GHL102", rules_hit([router(guard_kids=kids)]))
+
+    def test_it_is_quiet_when_the_shadowed_path_does_no_compliance_work(self):
+        """GHL009's correct pattern: the guard suppresses only a duplicate alert."""
+        els = [{"type": "add_contact_tag", "name": "Tag as engaged", "id": "e1",
+                "parentKey": "B2", "meta": {"tags": ["engaged"]}},
+               {"type": "internal_notification", "name": "Alert the rep",
+                "id": "e2", "parentKey": "B2", "meta": {"body": "Lead replied"}}]
+        self.assertNotIn("GHL102", rules_hit([router(else_kids=els)]))
+
+    def test_it_is_quiet_when_the_guard_tag_is_armed_by_another_workflow(self):
+        """A segment somebody else maintains is not a one-shot."""
+        els = [{"type": "add_contact_tag", "name": "Tag intent", "id": "e2",
+                "parentKey": "B2", "meta": {"tags": ["do-not-contact"]}},
+               {"type": "remove_from_workflow", "name": "Stop", "id": "e3",
+                "parentKey": "B2", "meta": {}}]
+        self.assertNotIn("GHL102", rules_hit([router(else_kids=els)]))
+
+    def test_it_is_quiet_when_a_reply_workflow_clears_the_guard(self):
+        """Cleared mid-conversation means it re-arms: a real dedupe."""
+        clear = wf("Re-arm", [{"type": "remove_contact_tag", "name": "Re-arm",
+                               "meta": {"tags": ["engaged"]}}],
+                   [trigger("customer_replied", "Replied")])
+        self.assertNotIn("GHL102", rules_hit([router(), clear]))
+
+    def test_it_skips_when_the_export_has_no_branch_wiring(self):
+        flat = wf("Reply Handler",
+                  [{"type": "if_else", "name": "Journey",
+                    "meta": {"branches": [branch("B1", "Engaged", "engaged")]}},
+                   {"type": "add_contact_tag", "name": "Tag intent",
+                    "meta": {"tags": ["do-not-contact"]}}],
+                  [trigger("customer_replied", "Replied")])
+        self.assertNotIn("GHL102", rules_hit([flat]))
+        self.assertIn("GHL102", skips_hit([flat]))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

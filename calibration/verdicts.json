@@ -1,7 +1,7 @@
 {
   "accounts": {
     "account-bundle-2026-09-01": {
-      "findings": 53,
+      "findings": 54,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-01.json",
       "workflows": 13
     },
@@ -11,7 +11,7 @@
       "workflows": 13
     },
     "requena-live-sep03": {
-      "findings": 37,
+      "findings": 38,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-03.json",
       "workflows": 13
     }
@@ -135,6 +135,16 @@
       "title": "Greeting renders as 'Hey ,' when first_name is empty",
       "verdict": "real",
       "workflow": "Dead Lead Reactivation"
+    },
+    "0dfad65f56a36f23": {
+      "account": "account-bundle-2026-09-01",
+      "note": "Verified by hand Sep-03 2026 before the rule was written, and then by three independent adversarial agents (real / uncovered / matters - all confirmed). Reply Handler triggers on customer_replied with conditions [] (every reply). Step order 0 'Where are they in the journey?' branch[0] gates on tag 'engaged' and its ONLY child is 'Log it quietly' (add_notes, next: null) - terminal, no action on the contact. The fall-through branch carries everything that detects an opt-out: the AI classifier (order 15), the intent router (19), 'OPT OUT' (56), the do-not-contact tag (57), three remove_from_workflow (58-60). Its FIRST action, order 14, is 'Tag as engaged'. So reply 1 falls through and arms the guard; reply 2+ matches branch[0] and dies on a note. 'engaged' is removed only at order 0/1 of OTHER cadences (entry re-arms), never by anything reply-triggered, so it never clears mid-conversation. Reply Handler is the account's only customer_replied workflow. Not covered by GHL009, which PRESCRIBES this guard and fired here on a different workflow; no rule checked the guard's scope. Correctly silent on the other three branches (call-booked / review-requested / referral-requested) because those tags are armed by other workflows - segment filters, not self-armed one-shots.",
+      "rule": "GHL102",
+      "severity": "critical",
+      "step": "Where are they in the journey?",
+      "title": "Only a contact's first reply is ever read \u2014 every reply after it stops at 'Already engaged - conversation is live'",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
     "0f3dc11ff80e5685": {
       "account": "requena-live-aug26",
@@ -842,6 +852,16 @@
       "title": "1 message can fire at any hour of the night",
       "verdict": "real",
       "workflow": "Speed to Lead - 5 Minute Response"
+    },
+    "6ca712b870e70e24": {
+      "account": "requena-live-sep03",
+      "note": "Verified by hand Sep-03 2026 before the rule was written, and then by three independent adversarial agents (real / uncovered / matters - all confirmed). Reply Handler triggers on customer_replied with conditions [] (every reply). Step order 0 'Where are they in the journey?' branch[0] gates on tag 'engaged' and its ONLY child is 'Log it quietly' (add_notes, next: null) - terminal, no action on the contact. The fall-through branch carries everything that detects an opt-out: the AI classifier (order 15), the intent router (19), 'OPT OUT' (56), the do-not-contact tag (57), three remove_from_workflow (58-60). Its FIRST action, order 14, is 'Tag as engaged'. So reply 1 falls through and arms the guard; reply 2+ matches branch[0] and dies on a note. 'engaged' is removed only at order 0/1 of OTHER cadences (entry re-arms), never by anything reply-triggered, so it never clears mid-conversation. Reply Handler is the account's only customer_replied workflow. Not covered by GHL009, which PRESCRIBES this guard and fired here on a different workflow; no rule checked the guard's scope. Correctly silent on the other three branches (call-booked / review-requested / referral-requested) because those tags are armed by other workflows - segment filters, not self-armed one-shots.",
+      "rule": "GHL102",
+      "severity": "critical",
+      "step": "Where are they in the journey?",
+      "title": "Only a contact's first reply is ever read \u2014 every reply after it stops at 'Already engaged - conversation is live'",
+      "verdict": "real",
+      "workflow": "Reply Handler - Route, Stop Nurture, Alert"
     },
     "7017916d1b7d5d54": {
       "account": "requena-live-aug26",

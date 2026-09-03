@@ -283,6 +283,96 @@
           }
         }
       ]
+    },
+    {
+      "_id": "wf_cs_guard_swallows",
+      "name": "Compliance SMS - Reply Router Guarded Too High",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "customer_replied",
+          "name": "Contact replied",
+          "filters": []
+        }
+      ],
+      "settings": {},
+      "_note": "GHL102's fixture. The 'engaged' guard is armed on the fall-through path it shadows, and the shadowed path is the one carrying the opt-out handling — so only a contact's FIRST reply is ever read. Distinct from GHL009's shape, which this rule must NOT report: there the guard suppresses only a duplicate alert.",
+      "steps": [
+        {
+          "type": "if_else",
+          "name": "Where are they in the journey?",
+          "id": "G-cs",
+          "parentKey": null,
+          "next": [
+            "B1-cs",
+            "B2-cs"
+          ],
+          "meta": {
+            "noneBranchName": "Live lead - AI reads the reply",
+            "branches": [
+              {
+                "id": "B1-cs",
+                "name": "Already engaged - conversation is live",
+                "operator": "and",
+                "segments": [
+                  {
+                    "operator": "and",
+                    "conditions": [
+                      {
+                        "conditionType": "contact_detail",
+                        "conditionSubType": "tags",
+                        "conditionOperator": "index-of-true",
+                        "conditionValue": [
+                          "engaged"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "add_notes",
+          "name": "Log it quietly",
+          "id": "B1-note",
+          "parentKey": "B1-cs",
+          "next": null,
+          "meta": {
+            "body": "Replied again mid-conversation. Rep was alerted on the first reply; no second alert."
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Tag as engaged",
+          "id": "B2-arm",
+          "parentKey": "B2-cs",
+          "meta": {
+            "tags": [
+              "engaged"
+            ]
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Tag intent - opt out",
+          "id": "B2-optout",
+          "parentKey": "B2-cs",
+          "meta": {
+            "tags": [
+              "do-not-contact"
+            ]
+          }
+        },
+        {
+          "type": "remove_from_workflow",
+          "name": "Stop the nurture - opt out",
+          "id": "B2-stop",
+          "parentKey": "B2-cs",
+          "meta": {}
+        }
+      ]
     }
   ]
 }

@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import re
 
-from ..model import Account, Step, Workflow
+from ..model import Account, Step, Workflow, collect_tags
 from ..rules import Skip, _finding, rule
 
 
@@ -1317,3 +1317,179 @@ def optout_recorded_never_enforced(acct: Account):
                  "statutory claim, and the tag is a written record that the "
                  "account knew. It is the one compliance failure that is "
                  "harder to defend for having been detected correctly.")
+
+
+REPLY_TRIGGER = re.compile(r"(customer_replied|message_received|inbound|reply)", re.I)
+# The actions that actually honour an opt-out. A note or an alert is a record;
+# these are the steps that stop something happening to the contact.
+COMPLIANCE_TAG = re.compile(
+    r"(do[\s_-]*not[\s_-]*(contact|call|text|email)|(^|[\s_-])dnc([\s_-]|$)"
+    r"|opt(ed)?[\s_-]*out|unsubscrib|wrong[\s_-]*num)", re.I)
+
+
+def _branch_tags(step: Step) -> dict:
+    """branch id -> the single tag it gates on, for tag-only branches."""
+    out = {}
+    for br in (step.config().get("branches") or []):
+        if not isinstance(br, dict) or not br.get("id"):
+            continue
+        tags = []
+        for seg in br.get("segments") or []:
+            for cond in (seg or {}).get("conditions") or []:
+                if str(cond.get("conditionSubType", "")).lower() != "tags":
+                    continue
+                vals = cond.get("conditionValue") or []
+                if isinstance(vals, list):
+                    tags.extend(str(v).strip().lower() for v in vals if v)
+        if len(tags) == 1:
+            out[br["id"]] = tags[0]
+    return out
+
+
+def _subtree(wf: Workflow, root_id: str) -> list:
+    """Every step under a branch id, following parentKey."""
+    by_parent = {}
+    for st in wf.steps:
+        by_parent.setdefault(st.raw.get("parentKey"), []).append(st)
+    out, stack = [], list(by_parent.get(root_id, []))
+    while stack:
+        st = stack.pop()
+        out.append(st)
+        stack.extend(by_parent.get(st.raw.get("id"), []))
+    return out
+
+
+def _compliance_actions(steps) -> list:
+    hits = []
+    for st in steps:
+        t = st.type.lower()
+        if "remove_from_workflow" in t or DND_KEY.search(t):
+            hits.append(st)
+            continue
+        for tag in st.tags_added():
+            if COMPLIANCE_TAG.search(str(tag)):
+                hits.append(st)
+                break
+    return hits
+
+
+@rule("GHL102", "Guard tag stops more than the alert it guards", "critical",
+      "compliance", "replies", "opt-out")
+def guard_tag_swallows_compliance(acct: Account):
+    """A reply router whose first branch makes opt-out handling one-shot.
+
+    GHL009 tells an account to add an 'engaged' guard so a rep is not alerted
+    twice in one conversation. That advice is right. Put the guard one branch
+    too high and it stops the whole router instead of the alert, and this
+    catalog had no way to see it — a catalog that prescribes a pattern and
+    cannot detect its over-application has a hole shaped like its own advice.
+
+    On the account this came from, the reply router's first branch tested
+    'engaged' and led to a single note reading "Replied again mid-conversation.
+    Rep was alerted on the first reply; no second alert." The author meant to
+    suppress a duplicate alert. What the branch actually does is end the run.
+    Everything that detects an opt-out — the classifier, the intent router, the
+    do-not-contact tag, the three remove-from-workflow steps — hangs off the
+    fall-through branch, and the fall-through's FIRST action is to add
+    'engaged'. So reply one is read and reply two onwards is not. A contact who
+    types "please stop" as their second message is never heard, and no other
+    workflow in the account listens for a reply.
+
+    It fires only when the guard tag is armed on the shadowed path itself
+    (a self-armed guard, not a segment somebody else maintains), the guarded
+    branch does no compliance work, the shadowed path does, and nothing
+    triggered by a reply ever clears the tag mid-conversation. Each of those is
+    a correct use of the pattern that must not be reported.
+    """
+    reply_wfs = [w for w in acct.published()
+                 if any(REPLY_TRIGGER.search(t.type) for t in w.triggers)]
+    if not reply_wfs:
+        return
+
+    # A tag cleared by anything reply-driven means the guard re-arms per reply,
+    # and the branch is a genuine dedupe rather than a one-shot.
+    cleared = set()
+    for w in reply_wfs:
+        for st in w.steps:
+            if "remove" in st.type.lower() and "tag" in st.type.lower():
+                for tag in collect_tags(st.raw):
+                    cleared.add(str(tag).strip().lower())
+
+    for wf in reply_wfs:
+        gates = [st for st in wf.steps if _is_gate(st.type)]
+        if not gates:
+            continue
+
+        # Only a workflow that HAS a tag-guarded branch is a candidate, so only
+        # that workflow can be skipped for missing wiring. Reporting a skip for
+        # every flat condition step in the account would bury the one case
+        # where the data genuinely decides the answer.
+        if any(_branch_tags(st) for st in gates) and not any(
+                st.raw.get("parentKey") for st in wf.steps):
+            yield Skip(
+                rule="GHL102",
+                title="Guard tag stops more than the alert it guards",
+                reason=f"'{wf.name}' has a tag-guarded branch but no branch "
+                       "wiring — no parentKey linking steps to the branch they "
+                       "sit under. On a flat step list a branch that dead-ends "
+                       "and one that rejoins the main path look identical, and "
+                       "that difference is the whole finding.",
+                needs="steps carrying parentKey/next on the workflow's "
+                      "condition steps",
+                category="compliance")
+            continue
+
+        for gatestep in gates:
+            guards = _branch_tags(gatestep)
+            if not guards:
+                continue
+            all_ids = [b for b in (gatestep.raw.get("next") or []) if b]
+            for branch_id, tag in guards.items():
+                if tag in cleared:
+                    continue
+                guarded = _subtree(wf, branch_id)
+                if _compliance_actions(guarded):
+                    continue  # the guarded path honours opt-outs itself
+                shadowed = []
+                for other in all_ids:
+                    if other != branch_id:
+                        shadowed.extend(_subtree(wf, other))
+                actions = _compliance_actions(shadowed)
+                if not actions:
+                    continue  # nothing of consequence is being shadowed
+                arms = [st for st in shadowed if tag in
+                        {str(t).strip().lower() for t in st.tags_added()}]
+                if not arms:
+                    continue  # guard armed elsewhere: a segment, not a one-shot
+                branch_name = next(
+                    (b.get("name") for b in (gatestep.config().get("branches") or [])
+                     if b.get("id") == branch_id), tag)
+                yield _finding(
+                    "GHL102", "critical", wf,
+                    f"Only a contact's first reply is ever read — every reply "
+                    f"after it stops at '{branch_name}'",
+                    f"This workflow runs on every inbound reply. Its "
+                    f"'{gatestep.name or gatestep.type}' branch '{branch_name}' "
+                    f"matches on the tag '{tag}' and does nothing that acts on "
+                    f"the contact. The path it shadows is the one that does the "
+                    f"real work — {len(actions)} step(s) there handle an "
+                    f"opt-out or a wrong number — and that path's own step "
+                    f"'{arms[0].name or arms[0].type}' is what adds '{tag}' in "
+                    f"the first place. So the first reply falls through, gets "
+                    f"read, and arms the guard; every reply after it matches "
+                    f"the guard and stops. Nothing triggered by a reply ever "
+                    f"clears '{tag}', so it never re-arms inside a live "
+                    f"conversation. A contact who asks to stop in their second "
+                    f"message is never heard.",
+                    f"Move the guard down so it wraps only the alert it was "
+                    f"meant to deduplicate, and let every reply reach the "
+                    f"classification and opt-out steps. Then test it: reply "
+                    f"twice from one contact and confirm the second reply is "
+                    f"still read.",
+                    step=gatestep.name or gatestep.type,
+                    category="compliance",
+                    cost="Every opt-out after a contact's first message is "
+                         "missed, and the account keeps sending. It is the "
+                         "most expensive kind of silent failure: the guard was "
+                         "added on purpose, it looks like good hygiene, and it "
+                         "reads as working right up until somebody complains.")

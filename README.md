@@ -8,20 +8,20 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-101-19D3B0)
+![rules](https://img.shields.io/badge/rules-102-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
 Account health: 15/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
-69 workflows audited. 101 root causes showing up in 218 places: 18 critical, 119 high, 68 medium, 13 low  [101 of 101 checks ran]
+70 workflows audited. 102 root causes showing up in 221 places: 19 critical, 105 high, 69 medium, 28 low  [102 of 102 checks ran]
 
-  Compliance        13/100  [###.....................]  41 findings
+  Compliance        13/100  [###.....................]  42 findings
   Deliverability    18/100  [####....................]  16 findings
-  Routing           15/100  [####....................]  100 findings
+  Routing           16/100  [####....................]  101 findings
   Hygiene           16/100  [####....................]  43 findings
-  Dead weight       18/100  [####....................]  18 findings
+  Dead weight       18/100  [####....................]  19 findings
 
 Fix in this order — ranked by what each one costs:
   1. [GHL019] Wait for an event with no timeout — 3 messages below it never send  (Speed to Lead - 5 Minute Response)
@@ -359,15 +359,15 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,074 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,080 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
-account trips **all 101 rules** with **zero checks skipped**, and two tests enforce
+account trips **all 102 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
 
 Every rule also went through an adversarial pass whose only job was to find a *correct*
 configuration it would wrongly flag, and to feed it malformed exports — `steps: null`,
 a trigger that is a bare string, a settings value that is a list — because a traceback
-mid-audit stops the other 100 checks. What that pass found got fixed and became a
+mid-audit stops the other 101 checks. What that pass found got fixed and became a
 regression test; that is most of why the suite is the size it is.
 
 ### The measured rate
@@ -386,8 +386,8 @@ marked `real` or `false_positive`, with a note saying why. `scripts/precision_re
 
 | | judged | false positives | rate |
 |---|---|---|---|
-| **Live** — what the catalog emits today (`--summary --live`) | 90 | **0** | **0.0%** |
-| Lifetime — every finding ever recorded, including ones no longer emitted | 186 | 39 | 21.0% |
+| **Live** — what the catalog emits today (`--summary --live`) | 92 | **0** | **0.0%** |
+| Lifetime — every finding ever recorded, including ones no longer emitted | 188 | 39 | 20.7% |
 
 The lifetime figure is a history of this catalog's mistakes, not a description of it. It
 counts GHL007's twenty-two false positives, which were diagnosed, rewritten, and now fire
@@ -446,7 +446,7 @@ person.** That is one account's worth of evidence wearing two labels, and `--sum
 itself. A third export of the same account would not fix it; a different business would.
 It is not a population statistic and no copy may present it as one.
 
-**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 101 checks with the
+**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 102 checks with the
 symptom, the fix and what each one costs. It is generated from a real run against the
 example account, so it cannot drift from the code.
 
