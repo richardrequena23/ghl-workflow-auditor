@@ -135,6 +135,39 @@ TRANSACTIONAL_TRIGGERS = ("appointment", "order", "payment", "invoice",
 MIN_BODY_TEXT = 60
 
 
+FOOTER_KEYS = frozenset({
+    "address", "address1", "addressline1", "street", "city", "state",
+    "postalcode", "postcode", "zip", "zipcode", "country", "footer",
+    "fulladdress", "businessaddress", "mailingaddress"})
+
+
+def _carries_footer(settings) -> bool:
+    """Does this settings blob even have somewhere for an address to live?
+
+    Keys only, at any depth — the VALUE may legitimately be empty, and an
+    account that supplied `"address": ""` really has told us it has none.
+    What matters is whether the export went looking.
+    """
+    found = False
+
+    def walk(node):
+        nonlocal found
+        if found:
+            return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if _nk(k) in FOOTER_KEYS:
+                    found = True
+                    return
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(settings)
+    return found
+
+
 def _transactional(acct: Account, wf: Workflow, emails: list) -> bool:
     """Exempt from the marketing-only checks in this pack.
 
@@ -203,6 +236,35 @@ def marketing_email_without_postal_address(acct: Account):
         json.dumps(inv.templates, default=str)
     if STREET.search(account_footer) or PO_BOX.search(account_footer) \
             or ADDRESS_MERGE.search(account_footer):
+        return
+
+    # No address in the supplied footer. Before calling that a violation, ask
+    # whether what arrived could have contained one at all.
+    #
+    # An exporter that ships `emailSettings` holding only sending-domain keys
+    # has told us nothing about the footer, but it flips this rule out of its
+    # skip and into nine `high` findings on an account whose postal address is
+    # sitting in its own location record. That is not hypothetical: it happened
+    # the first time this repo's companion exporter learned to send an
+    # inventory, and the findings were confidently wrong rather than absent.
+    #
+    # A half-supplied bucket is more dangerous than a missing one. Missing
+    # yields an honest skip; half-supplied yields a confident wrong answer, and
+    # this rule asserts a federal violation. So it needs positive evidence that
+    # the footer was actually captured — an address-shaped key, or a template
+    # with copy in it — and skips when it has neither.
+    if not (_carries_footer(inv.email_settings) or inv.templates):
+        yield Skip(
+            rule="GHL059",
+            title="Marketing email with no postal address in the footer",
+            reason="An email configuration was supplied but it carries no "
+                   "address fields and no template copy, so it cannot show "
+                   "where this account's postal address is set. Absence of "
+                   "the address from a partial export is not evidence that "
+                   "the account has none.",
+            needs="the location's address fields (address / city / state / "
+                  "postalCode) or the shared email templates, in emailSettings",
+            category="compliance")
         return
 
     for wf in acct.published():
