@@ -8,14 +8,14 @@ valid configuration.
 [![tests](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml/badge.svg)](https://github.com/richardrequena23/ghl-workflow-auditor/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)
-![rules](https://img.shields.io/badge/rules-104-19D3B0)
+![rules](https://img.shields.io/badge/rules-106-19D3B0)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 ```
 $ python -m ghlaudit account.json
 
 Account health: 15/100  (F)   Customers are receiving the wrong messages right now. Stop and fix before the next campaign.
-74 workflows audited. 104 root causes showing up in 224 places: 19 critical, 106 high, 71 medium, 28 low  [104 of 104 checks ran]
+76 workflows audited. 106 root causes showing up in 231 places: 19 critical, 109 high, 74 medium, 29 low  [106 of 106 checks ran]
 
   Compliance        13/100  [###.....................]  42 findings
   Deliverability    18/100  [####....................]  16 findings
@@ -359,9 +359,9 @@ is the thing people actually forget when they add a calendar later.
 ## False positives are the point
 
 A rule that fires on everything gets ignored, and then the report is worthless. Every
-rule ships with a test that trips it **and** a test that must not trip it — **1,109 tests**
+rule ships with a test that trips it **and** a test that must not trip it — **1,134 tests**
 in [`tests/`](tests/), run against Python 3.9–3.13 on every push. The shipped example
-account trips **all 104 rules** with **zero checks skipped**, and two tests enforce
+account trips **all 106 rules** with **zero checks skipped**, and two tests enforce
 exactly that, so a rule cannot rot into never firing without the suite noticing.
 
 Every rule also went through an adversarial pass whose only job was to find a *correct*
@@ -386,8 +386,8 @@ marked `real` or `false_positive`, with a note saying why. `scripts/precision_re
 
 | | judged | false positives | rate |
 |---|---|---|---|
-| **Live** — what the catalog emits today (`--summary --live`) | 94 | **0** | **0.0%** |
-| Lifetime — every finding ever recorded, including ones no longer emitted | 190 | 39 | 20.5% |
+| **Live** — what the catalog emits today (`--summary --live`) | 96 | **0** | **0.0%** |
+| Lifetime — every finding ever recorded, including ones no longer emitted | 192 | 39 | 20.3% |
 
 The lifetime figure is a history of this catalog's mistakes, not a description of it. It
 counts GHL007's twenty-two false positives, which were diagnosed, rewritten, and now fire
@@ -446,7 +446,7 @@ person.** That is one account's worth of evidence wearing two labels, and `--sum
 itself. A third export of the same account would not fix it; a different business would.
 It is not a population statistic and no copy may present it as one.
 
-**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 104 checks with the
+**[The full catalog is in `docs/RULES.md`](docs/RULES.md)** — all 106 checks with the
 symptom, the fix and what each one costs. It is generated from a real run against the
 example account, so it cannot drift from the code.
 

@@ -1113,6 +1113,42 @@
       "settings": {}
     },
     {
+      "_id": "wf_ai_blind_qualifier",
+      "name": "AI Safety Demo - Blind Qualifier",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "contact_tag_added",
+          "name": "Tag Added: demo-qualify",
+          "filters": [
+            {
+              "tag": "demo-qualify"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "chatgpt",
+          "name": "AI - Score This Lead",
+          "meta": {
+            "prompt": "You are a lead qualification classifier. Reply with exactly one of: HOT, WARM, COLD. Lead name: {{contact.name}}. Their latest message: {{message.body}}. Answer with only the single word.",
+            "model": "gpt-4o"
+          }
+        },
+        {
+          "type": "add_contact_tag",
+          "name": "Tag by score",
+          "meta": {
+            "tags": [
+              "demo-scored"
+            ]
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
       "_id": "wf_cb_fixed_wait",
       "name": "Calendar Booking Demo - Reminders On A Fixed Wait",
       "status": "published",
@@ -1377,6 +1413,51 @@
           "name": "Confirmation SMS",
           "meta": {
             "body": "Hey {{contact.first_name}} - you're booked for {{appointment.start_time}} ({{appointment.timezone}}). Reply STOP to opt out."
+          }
+        }
+      ],
+      "settings": {}
+    },
+    {
+      "_id": "wf_cb_tomorrow_same_day",
+      "name": "Calendar Booking Demo - Tomorrow On A Same-Day Calendar",
+      "status": "published",
+      "triggers": [
+        {
+          "type": "appointment",
+          "name": "Booked",
+          "conditions": [
+            {
+              "operator": "==",
+              "field": "calendar.id",
+              "value": "CVokAlI8fgw4WYWoCtQz"
+            },
+            {
+              "operator": "==",
+              "field": "appointment.status",
+              "value": "confirmed"
+            }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "type": "event_start_wait",
+          "name": "Wait until 24h before",
+          "meta": {
+            "waitType": "appointment_time",
+            "offset": {
+              "value": 24,
+              "unit": "hours",
+              "direction": "before"
+            }
+          }
+        },
+        {
+          "type": "sms",
+          "name": "24h reminder SMS",
+          "meta": {
+            "body": "Hey {{contact.first_name}} - quick reminder, we're on tomorrow at {{appointment.start_time}}. Reply STOP to opt out."
           }
         }
       ],
@@ -3133,7 +3214,9 @@
       "name": "Calendar Booking Demo - Strategy Call",
       "autoConfirm": true,
       "formSubmitType": "ThankYouMessage",
-      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{contactMethod}} if you have any questions."
+      "formSubmitThanksMessage": "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{contactMethod}} if you have any questions.",
+      "slotDuration": 30,
+      "slotDurationUnit": "mins"
     }
   ],
   "users": [

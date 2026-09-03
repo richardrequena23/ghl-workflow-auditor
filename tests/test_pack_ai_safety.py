@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ghlaudit.model import Account  # noqa: E402
 from ghlaudit.rules import run, run_all  # noqa: E402
 
-MINE = ("GHL077", "GHL078", "GHL079", "GHL080", "GHL081", "GHL082")
+MINE = ("GHL077", "GHL078", "GHL079", "GHL080", "GHL081", "GHL082",
+        "GHL105")
 
 
 def bundle(workflows, custom_values=None, **extra):
@@ -830,3 +831,74 @@ class PackHygiene(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+TAG = [{"type": "contact_tag_added", "name": "Tag Added: qualify",
+        "filters": [{"tag": "qualify"}]}]
+GRADE = ("Classify this lead as HOT, WARM or COLD. Their latest message: "
+         "{{message.body}}. Answer with one word.")
+
+
+class PromptReadsAMessageTheTriggerLacks(unittest.TestCase):
+    """GHL105 — {{message.body}} under a trigger that carries no message."""
+
+    def test_a_tag_triggered_classifier_reading_the_message_fires(self):
+        hits = [f for f in audit([wf("Score", [ai(prompt=GRADE)], TAG)])
+                if f.rule == "GHL105"]
+        self.assertEqual([f.severity for f in hits], ["high"])
+        self.assertIn("Tag Added: qualify", hits[0].title)
+
+    def test_the_tag_writer_is_named_in_the_finding(self):
+        writer = wf("Intake", [{"type": "add_contact_tag", "name": "Tag",
+                                "meta": {"tags": ["qualify"]}}], FORM)
+        hits = [f for f in audit([writer, wf("Score", [ai(prompt=GRADE)], TAG)])
+                if f.rule == "GHL105"]
+        self.assertEqual(len(hits), 1)
+        self.assertIn("'Intake', which runs on form_submitted", hits[0].symptom)
+
+    def test_a_form_trigger_has_no_message_either(self):
+        self.assertIn("GHL105", rules_hit([wf("Score", [ai(prompt=GRADE)], FORM)]))
+
+    def test_a_reply_trigger_carries_the_message(self):
+        self.assertNotIn("GHL105", rules_hit([wf("Score", [ai(prompt=GRADE)],
+                                                 INBOUND)]))
+
+    def test_a_call_status_trigger_is_given_the_benefit_of_the_doubt(self):
+        trg = [{"type": "call_status", "name": "Missed call"}]
+        self.assertNotIn("GHL105", rules_hit([wf("Score", [ai(prompt=GRADE)],
+                                                 trg)]))
+
+    def test_mixed_triggers_with_one_message_trigger_are_fine(self):
+        self.assertNotIn("GHL105", rules_hit([wf("Score", [ai(prompt=GRADE)],
+                                                 TAG + INBOUND)]))
+
+    def test_added_to_by_a_reply_workflow_is_fine(self):
+        feeder = wf("Reply Handler", [{"type": "add_to_workflow", "name": "Hand off",
+                                       "meta": {"workflow_id": "Score"}}], INBOUND)
+        self.assertNotIn("GHL105", rules_hit([feeder,
+                                              wf("Score", [ai(prompt=GRADE)], TAG)]))
+
+    def test_a_prompt_that_expects_a_blank_is_left_alone(self):
+        prompt = ("Grade the lead. Their latest message, if any (may be blank): "
+                  "{{message.body}}. Lead source: {{contact.source}}.")
+        self.assertNotIn("GHL105", rules_hit([wf("Score", [ai(prompt=prompt)],
+                                                 TAG)]))
+
+    def test_a_prompt_that_reads_only_contact_fields_is_fine(self):
+        prompt = "Grade the lead from their form answers: {{contact.goal}}."
+        self.assertNotIn("GHL105", rules_hit([wf("Score", [ai(prompt=prompt)],
+                                                 TAG)]))
+
+    def test_no_triggers_exported_reports_a_skip(self):
+        findings, skips = run_all(Account.load(bundle([wf("Score", [ai(prompt=GRADE)], [])])))
+        self.assertIn("GHL105", {s.rule for s in skips})
+        self.assertNotIn("GHL105", {f.rule for f in findings})
+
+    def test_a_draft_is_silent(self):
+        self.assertNotIn("GHL105", rules_hit([wf("Score", [ai(prompt=GRADE)],
+                                                 TAG, status="draft")]))
+
+    def test_an_outbound_sms_reading_the_message_is_not_this_rule(self):
+        """v1 is AI steps only; copy is GHL023's lane."""
+        steps = [sms("Echo", "You said: {{message.body}}")]
+        self.assertNotIn("GHL105", rules_hit([wf("Echo", steps, TAG)]))

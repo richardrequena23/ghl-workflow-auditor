@@ -11,7 +11,7 @@
       "workflows": 13
     },
     "requena-live-sep03": {
-      "findings": 40,
+      "findings": 42,
       "path": "/Users/richardrequena/Documents/Requena-HQ/OUTPUTS/ghl-account-audit/account-bundle-2026-09-03.json",
       "workflows": 13
     }
@@ -274,6 +274,16 @@
       "title": "Suppression tags are checked before the wait, never after",
       "verdict": "real",
       "workflow": "Review Request After Close"
+    },
+    "1865f6a66a14c13a": {
+      "account": "requena-live-sep03",
+      "note": "Verified Sep-03 2026 by hand against the bundle: 'Strategy Call - Booking & Confirmation v2' step 13 wait appointmentStartAfter {before, 24 hours}; step 14 'Pre-call email' body 'We're on tomorrow at {{appointment.start_time}}' and step 15 SMS same; calendar Qie7VNcnTSYhyXY3gPdz record (44 keys, slotDuration 30, openHours) carries no allowBookingAfter key (refuters' live GET: null) \u2014 no minimum scheduling notice, same-day bookings allowed. Confirmed by 3 adversarial refuters (wf_f08a3025-2f7). The already-passed wait default is unknown; the finding says either/or and does not pick.",
+      "rule": "GHL106",
+      "severity": "medium",
+      "step": "Pre-call email",
+      "title": "'Pre-call email' says \"We're on tomorrow at [the appointment time] ([\u2026])\" \u2014 the 'Strategy Call' calendar takes same-day bookings",
+      "verdict": "real",
+      "workflow": "Strategy Call - Booking & Confirmation v2"
     },
     "19fea74c3fdc600d": {
       "account": "requena-live-aug26",
@@ -614,6 +624,16 @@
       "title": "Reply handling is delegated to 'Reply Handler - Route, Stop Nurture, Alert' \u2014 confirm this workflow is in its remove list",
       "verdict": "real",
       "workflow": "Strategy Call - Booking & Confirmation v2"
+    },
+    "3d24b296a814f4c3": {
+      "account": "requena-live-sep03",
+      "note": "Verified Sep-03 2026 by hand against the bundle: 'AI Lead Qualification - Score, Route & Sync' (published) has one trigger, contact_tag_added on 'ai-qualify'; step 'AI - Score This Lead' (chatgpt) promptText reads 'Their latest message: {{message.body}}' and every HOT/WARM/COLD rule is about the message; the only writer of 'ai-qualify' is 'Lead Intake' (form_submitted, no outbound); 'message.body' occurs exactly twice in the bundle \u2014 here and in Reply Handler under customer_replied, the correct pairing. Platform fact (message merge fields populate only under message triggers) is HighLevel's documented behaviour, NOT executed on this account \u2014 the workflow has never run (no OpenAI key). Confirmed by 3 adversarial refuters (wf_f08a3025-2f7).",
+      "rule": "GHL105",
+      "severity": "high",
+      "step": "AI - Score This Lead",
+      "title": "'AI - Score This Lead' reads {{message.body}}, and this workflow starts on 'Tag Added: ai-qualify' \u2014 which has no message",
+      "verdict": "real",
+      "workflow": "AI Lead Qualification - Score, Route & Sync"
     },
     "3f1579742bd53626": {
       "account": "requena-live-aug26",

@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 
 from ..model import FALLBACK_FILTER, Account, Step
-from ..rules import (AI_STEP_TYPE, MODEL_CALL_KEYS, _finding, _is_ai_step,
+from ..rules import (AI_STEP_TYPE, MODEL_CALL_KEYS, Skip, _finding, _is_ai_step,
                      _is_send, _keys_under, rule)
 
 
@@ -948,3 +948,161 @@ def pii_into_a_third_party_model(acct: Account):
                 cost="Personal data leaves the account through the least "
                      "audited path it has. The cost is a compliance answer "
                      "you cannot give, on a payload nobody meant to build.")
+
+
+# --------------------------------------------------------------------------
+# GHL105 — the prompt reads a message the trigger never carries
+# --------------------------------------------------------------------------
+
+# Merge namespaces that only a message event populates. `{{message.body}}` is
+# documented as the inbound message that TRIGGERED the workflow; under a tag,
+# form or pipeline trigger there is no such message and the token renders empty.
+MESSAGE_TOKEN = re.compile(r"^(message|inbound_message|sms|conversation)\.", re.I)
+
+# Trigger types that carry a message. Deliberately wide: a call-status trigger
+# does populate message.* in HighLevel, and anything with "reply", "message" or
+# "conversation" in its name is given the benefit of the doubt. The rule only
+# fires when NOTHING enrolling the workflow could carry one.
+MESSAGE_TRIGGER = re.compile(
+    r"repl|message|call|conversation|email|sms|chat|comment|voicemail|"
+    r"whatsapp|inbound", re.I)
+
+# A prompt that already expects the token to be blank has handled it.
+BLANK_AWARE = re.compile(
+    r"blank|empty|none|n/?a\b|if any|may be missing|if (there is|present|"
+    r"provided)|not provided|no message", re.I)
+
+
+def _message_bearing(wf) -> bool:
+    for trg in wf.triggers:
+        if trg.canonical_type() == "inbound_message" \
+                or MESSAGE_TRIGGER.search(str(trg.type)):
+            return True
+    return False
+
+
+def _enrolled_from_a_message(acct: Account, wf) -> bool:
+    """Is this workflow added-to by a workflow that DOES have a message?"""
+    for other in acct.published():
+        if other is wf or not _message_bearing(other):
+            continue
+        for step in other.steps:
+            if "workflow" not in _nk(step.type) or "remove" in _nk(step.type):
+                continue
+            blob = step.text().lower()
+            if (wf.id and str(wf.id).lower() in blob) \
+                    or (wf.name and wf.name.lower() in blob):
+                return True
+    return False
+
+
+def _tag_writers(acct: Account, tags: set) -> list:
+    out = []
+    for other in acct.published():
+        hits = {t.strip().lower() for t in other.tags_added()} & tags
+        if hits:
+            out.append((other, sorted(hits)))
+    return out
+
+
+@rule("GHL105", "Prompt reads the contact's message on a trigger that has none",
+      "high", "routing", "ai", "triggers", "copy")
+def prompt_reads_a_message_the_trigger_lacks(acct: Account):
+    """The classifier's only evidence field is structurally blank.
+
+    `{{message.body}}` is the inbound message that started the workflow. It
+    exists under Customer Replied and the other message triggers, and under
+    nothing else — a tag has no message attached, and neither does a form or
+    a pipeline stage. A prompt that asks the model to grade "their latest
+    message" on a tag-triggered workflow therefore grades an empty string for
+    every contact who enters, and a prompt that calls an unreadable message
+    COLD routes the whole account's hot leads to the cold branch.
+
+    Found on a real account beside its own correct twin: the same token, the
+    same model, one workflow on Customer Replied and one on Tag Added. Only
+    the second one was wrong, and nothing in the builder shows the difference.
+    GHL077 and GHL049 both fire on that step and both assume the text arrives;
+    GHL023 reads outbound copy only and knows nothing about triggers. This
+    stays quiet when any enrolling trigger carries a message, when a
+    message-triggered workflow adds contacts to this one, and when the prompt
+    itself says the field may be blank.
+    """
+    for wf in acct.published():
+        ai_steps = [s for s in wf.steps if _is_ai_step(s)]
+        if not ai_steps:
+            continue
+        hits = []
+        for step in ai_steps:
+            prompt = _prompt_text(step)
+            for m in MERGE_TOKEN.finditer(prompt or ""):
+                token = m.group(1).split("|")[0].strip()
+                if not MESSAGE_TOKEN.search(token):
+                    continue
+                around = prompt[max(0, m.start() - 80):m.end() + 80]
+                if BLANK_AWARE.search(around):
+                    continue
+                hits.append((step, token))
+                break
+        if not hits:
+            continue
+        if not wf.triggers:
+            yield Skip(
+                rule="GHL105",
+                title="Prompt reads the contact's message on a trigger that "
+                      "has none",
+                reason=f"'{wf.name}' has an AI step whose prompt reads "
+                       f"{{{{{hits[0][1]}}}}}, but its triggers were not "
+                       f"exported, so whether the enrolling event carries a "
+                       f"message cannot be told.",
+                needs="workflow triggers in the input bundle",
+                category="routing")
+            continue
+        if _message_bearing(wf) or _enrolled_from_a_message(acct, wf):
+            continue
+
+        step, token = hits[0]
+        trigger_names = ", ".join(
+            f"'{t.name or t.type}'" for t in wf.triggers)
+        path = ""
+        tags = {t.strip().lower() for t in wf.trigger_tags()}
+        if tags:
+            writers = _tag_writers(acct, tags)
+            if writers:
+                bits = []
+                for other, hit in writers:
+                    kinds = ", ".join(sorted({t.canonical_type()
+                                              for t in other.triggers}) or ["?"])
+                    bits.append(f"'{other.name}', which runs on {kinds} "
+                                f"and adds '{', '.join(hit)}'")
+                path = (" The only thing that adds that tag is "
+                        + "; ".join(bits) + " — so every contact arrives "
+                        "one hop off an event with no message in it.")
+            else:
+                path = (" Nothing in the exported workflows adds that tag, "
+                        "so it is applied by hand or by a form — neither "
+                        "carries a message.")
+        yield _finding(
+            "GHL105", "high", wf,
+            f"'{step.name or step.type}' reads {{{{{token}}}}}, and this "
+            f"workflow starts on {trigger_names} — which has no message",
+            f"The prompt asks the model to judge the contact on "
+            f"{{{{{token}}}}}: the inbound message that started the "
+            f"workflow. This workflow starts on {trigger_names}, and that "
+            f"event carries no message — HighLevel documents the message "
+            f"merge fields as populated by the Customer Replied and other "
+            f"message triggers, and renders them empty everywhere else."
+            f"{path} So the one field the prompt actually judges on is "
+            f"blank for every contact who enters, and whatever the model "
+            f"says about an empty message decides where they are routed.",
+            f"Feed the prompt something the trigger can supply — the form "
+            f"field that holds the lead's own words, via a contact custom "
+            f"field — or move the classifier behind a Customer Replied "
+            f"trigger, which is how a reply classifier is normally wired. "
+            f"Then run one test contact and read the model's input in the "
+            f"execution log.",
+            step=step.name or step.type,
+            cost="A model charge per lead for a verdict decided before the "
+                 "lead said anything, and the routing that follows it — the "
+                 "hot-lead alert, the opportunity, the booking nudge — runs on "
+                 "no evidence.",
+            reach=len(wf.outbound))

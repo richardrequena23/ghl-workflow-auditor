@@ -29,7 +29,7 @@ FRAGMENT = os.path.join(HERE, "..", "examples", "packs", "calendar_booking.json"
 BASE = os.path.join(HERE, "..", "examples", "base-account.json")
 
 MINE = {"GHL065", "GHL066", "GHL067", "GHL068", "GHL069", "GHL070",
-        "GHL103"}
+        "GHL103", "GHL106"}
 
 # HighLevel object ids are base62 and about twenty characters long, with no
 # separators. The pack only judges a booking link whose token looks like one,
@@ -1556,3 +1556,115 @@ class ThankYouScreenContradictsAutoConfirm(unittest.TestCase):
         self.assertEqual(findings_for(
             "GHL103", [confirmer()],
             calendars=[calendar(message=msg)]), [])
+
+
+TOMORROW = ("Hey {{contact.first_name}} -<br><br>We're on tomorrow at "
+            "{{appointment.start_time}}. Reply STOP to opt out.")
+
+
+def same_day_calendar(notice=None, unit="hours", cal_id=LIVE_CAL, **extra):
+    rec = {"id": cal_id, "name": "Strategy Call", "slotDuration": 30,
+           "slotDurationUnit": "mins", "autoConfirm": True,
+           "formSubmitType": "RedirectURL"}
+    if notice is not None:
+        rec["allowBookingAfter"] = notice
+        rec["allowBookingAfterUnit"] = unit
+    rec.update(extra)
+    return rec
+
+
+def ladder(body=TOMORROW, hours=24, cal_id=LIVE_CAL, status="published"):
+    return wf("Booking Confirmation",
+              [sms("Confirmation SMS", "You're booked. Reply STOP to opt out."),
+               appt_wait("Wait until 24h before", value=hours),
+               email("Pre-call email", body, subject="Tomorrow - one thing")],
+              triggers=[confirmed_on(cal_id)], status=status)
+
+
+class TomorrowOnASameDayCalendar(unittest.TestCase):
+    """GHL106 — copy names the day under a wait a same-day booking cannot
+    reach in time."""
+
+    def test_tomorrow_under_a_24h_wait_with_no_notice_is_reported(self):
+        hits = findings_for("GHL106", [ladder()],
+                            calendars=[same_day_calendar()])
+        self.assertEqual([f.severity for f in hits], ["medium"])
+        self.assertEqual(hits[0].step, "Pre-call email")
+        self.assertIn("We're on tomorrow at [the appointment time]",
+                      hits[0].symptom)
+        self.assertNotIn("<br>", hits[0].symptom)
+        self.assertNotIn("first_name}}", hits[0].symptom)
+
+    def test_a_day_of_notice_makes_the_copy_true(self):
+        self.assertEqual(findings_for(
+            "GHL106", [ladder()],
+            calendars=[same_day_calendar(notice=1, unit="days")]), [])
+        self.assertEqual(findings_for(
+            "GHL106", [ladder()],
+            calendars=[same_day_calendar(notice=24, unit="hours")]), [])
+
+    def test_a_short_notice_still_fires(self):
+        hits = findings_for("GHL106", [ladder()],
+                            calendars=[same_day_calendar(notice=2, unit="hours")])
+        self.assertEqual(len(hits), 1)
+        self.assertIn("minimum notice of only 2 hours", hits[0].symptom)
+
+    def test_copy_without_a_day_word_is_fine(self):
+        body = "We're on at {{appointment.start_time}}. See you then."
+        self.assertEqual(findings_for("GHL106", [ladder(body=body)],
+                                      calendars=[same_day_calendar()]), [])
+
+    def test_tomorrow_in_an_errand_sentence_is_not_a_claim(self):
+        body = ("You're on the calendar for {{appointment.start_time}}. "
+                "I'll send the workbook over tomorrow.")
+        self.assertEqual(findings_for("GHL106", [ladder(body=body)],
+                                      calendars=[same_day_calendar()]), [])
+
+    def test_a_short_wait_is_not_the_shape(self):
+        """'Tomorrow' under a 1-hour wait is a different defect (wrong copy),
+        not a same-day-booking hole."""
+        self.assertEqual(findings_for("GHL106", [ladder(hours=1)],
+                                      calendars=[same_day_calendar()]), [])
+
+    def test_a_past_status_trigger_is_out_of_scope(self):
+        flow = ladder()
+        flow["triggers"] = [confirmed_on(status="no_show")]
+        self.assertEqual(findings_for("GHL106", [flow],
+                                      calendars=[same_day_calendar()]), [])
+
+    def test_no_calendars_reports_a_skip(self):
+        self.assertIn("GHL106", skips_hit([ladder()]))
+
+    def test_ids_and_names_only_reports_a_skip(self):
+        self.assertIn("GHL106", skips_hit([ladder()], calendars=CALENDARS))
+
+    def test_a_calendar_that_is_not_the_one_booked_against_is_ignored(self):
+        self.assertEqual(findings_for(
+            "GHL106", [ladder(cal_id=DEAD_CAL)],
+            calendars=[same_day_calendar(), {"id": DEAD_CAL, "name": "Other",
+                                             "slotDuration": 30,
+                                             "allowBookingAfter": 2,
+                                             "allowBookingAfterUnit": "days"}]),
+            [])
+
+    def test_an_unfiltered_trigger_uses_the_only_calendar(self):
+        flow = ladder()
+        flow["triggers"] = [{"type": "appointment", "name": "Booked",
+                             "conditions": [{"field": "appointment.status",
+                                             "value": "confirmed"}]}]
+        self.assertEqual(len(findings_for("GHL106", [flow],
+                                          calendars=[same_day_calendar()])), 1)
+
+    def test_an_unfiltered_trigger_with_two_calendars_stays_quiet(self):
+        flow = ladder()
+        flow["triggers"] = [{"type": "appointment", "name": "Booked",
+                             "conditions": [{"field": "appointment.status",
+                                             "value": "confirmed"}]}]
+        self.assertEqual(findings_for(
+            "GHL106", [flow],
+            calendars=[same_day_calendar(),
+                       same_day_calendar(cal_id=DEAD_CAL)]), [])
+
+    def test_a_draft_is_silent(self):
+        self.assertEqual(findings_for("GHL106", [ladder(status="draft")],
+                                      calendars=[same_day_calendar()]), [])

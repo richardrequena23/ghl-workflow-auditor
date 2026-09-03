@@ -1571,3 +1571,185 @@ def thank_you_screen_contradicts_auto_confirm(acct: Account):
                  "a no-show nobody can explain, and the closer's hour is paid "
                  "for either way.",
             reach=len(wf.outbound))
+
+
+# --------------------------------------------------------------------------
+# GHL106 — "tomorrow" on a calendar that takes same-day bookings
+# --------------------------------------------------------------------------
+
+# A day-word that only makes sense if the appointment is at least a day away.
+_DAY_WORD = re.compile(r"\btomorrow\b|\bthe day before\b|\bin 24 hours\b", re.I)
+_ABOUT_THE_MEETING = re.compile(
+    r"\[the appointment time\]|\bcall\b|\bappointment\b|\bsession\b|"
+    r"\bmeeting\b|\bconsult|we'?re on\b|see you\b", re.I)
+
+# The calendar's minimum scheduling notice, in whichever spelling it exports.
+_NOTICE_KEYS = ("allowBookingAfter", "allow_booking_after", "minimumNotice",
+                "minimum_notice", "minSchedulingNotice", "minimumSchedulingNotice")
+_NOTICE_UNIT_KEYS = ("allowBookingAfterUnit", "allow_booking_after_unit",
+                     "minimumNoticeUnit", "minSchedulingNoticeUnit")
+_SETTINGS_MARKERS = ("slotDuration", "openHours", "availabilities",
+                     "slotInterval", "appoinmentPerSlot", "appointmentPerSlot")
+
+
+def _notice_minutes(rec: dict):
+    """The calendar's minimum booking notice in minutes; 0 when it has none."""
+    value = next((rec.get(k) for k in _NOTICE_KEYS if rec.get(k) is not None),
+                 None)
+    if value in (None, "", 0, "0", False):
+        return 0.0
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None  # stated, but not in a shape this can read
+    unit = str(next((rec.get(k) for k in _NOTICE_UNIT_KEYS
+                     if rec.get(k)), "hours")).lower()
+    per = _unit_of(unit)
+    return value * per if per else None
+
+
+def _unit_of(word: str):
+    for name, minutes in _UNITS.items():
+        if word.startswith(name):
+            return minutes
+    return None
+
+
+def _calendar_of(trigger) -> str:
+    for f in trigger.filters():
+        if isinstance(f, dict) and "calendar" in _nk(f.get("field", "")):
+            val = f.get("value")
+            if isinstance(val, list) and len(val) == 1:
+                val = val[0]
+            if isinstance(val, str):
+                return val
+    return ""
+
+
+def _readable(text: str) -> str:
+    """Copy as the contact reads it: tags stripped, merge fields named.
+
+    The sentence splitter breaks on the dot inside `{{contact.first_name}}`,
+    and an email body carries `<br>` where the line breaks are, so quoting
+    a raw sentence back to the client hands them a fragment of template.
+    """
+    text = re.sub(r"<br\s*/?>|</?p>|</?div>", "\n", str(text), flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\{\{\s*appointment\.[^}]*\}\}", "[the appointment time]", text)
+    text = re.sub(r"\{\{[^}]*\}\}", "[…]", text)
+    return re.sub(r"[ \t]+", " ", text)
+
+
+def _promises_a_day_away(text: str) -> str:
+    """The sentence that says the meeting is tomorrow, or ''."""
+    for sentence in _sentences(_readable(text)):
+        if _DAY_WORD.search(sentence) and _ABOUT_THE_MEETING.search(sentence):
+            return sentence.strip(" -–—")
+    return ""
+
+
+@rule("GHL106", "Reminder copy promises a lead time the calendar does not "
+      "enforce", "medium", "routing", "appointments", "timing", "copy")
+def tomorrow_on_a_same_day_calendar(acct: Account):
+    """"We're on tomorrow" under a 24-hours-before wait, on a calendar that
+    lets someone book for later today.
+
+    The ladder is correct for a booking made two days out. For one made at
+    1:30 for a 2:00 slot, the "24 hours before" moment is already in the past
+    when the contact arrives at the wait, and the copy beneath it names the
+    wrong day. Whether the platform releases the wait at once (confirmation,
+    then within a minute two messages saying the call is tomorrow) or holds
+    the contact for a moment that never comes (no 1-hour or 10-minute
+    reminder either) is a platform default this export cannot see — the
+    finding says either, and does not pick.
+
+    Two things have to be true in the export before this speaks: the calendar
+    record is exported with its settings and states no minimum notice of a
+    day or more, and the copy under a day-or-more appointment wait names the
+    day in a sentence about the meeting. A calendar that enforces 24 hours'
+    notice makes the copy true and the rule silent. A calendar exported as
+    id and name only makes the question undecidable and the rule skips.
+    """
+    inv = acct.inventory
+    records = inv.calendar_records
+    settings_bearing = {cid: r for cid, r in records.items()
+                        if any(k in r for k in _SETTINGS_MARKERS)}
+    for wf in acct.published():
+        appts = _appointment_triggers(wf)
+        if not appts or _PAST_STATUS.search(_trigger_blob(appts)):
+            continue
+        parents = _parent_map(wf) if wf.has_wiring else {}
+        for i, step in enumerate(wf.steps):
+            if not step.is_outbound:
+                continue
+            if parents:
+                holds = _wait_ancestors(wf, parents, step)
+            else:
+                holds = [s for s in wf.steps[:i] if s.is_wait]
+            far = None
+            for w in holds:
+                anchored, minutes = _appointment_offset(w)
+                if anchored and minutes is not None and minutes <= -720:
+                    far = (w, minutes)
+                    break
+            if far is None:
+                continue
+            claim = _promises_a_day_away(step.bodies())
+            if not claim:
+                continue
+            cal_ids = {c for c in (_calendar_of(t) for t in appts) if c}
+            if not cal_ids and len(settings_bearing) == 1:
+                cal_ids = set(settings_bearing)
+            if not cal_ids:
+                continue  # which calendar this books against is not stated
+            if not inv.has("calendars") or \
+                    not any(c in settings_bearing for c in cal_ids):
+                yield Skip(
+                    rule="GHL106",
+                    title="Reminder copy promises a lead time the calendar "
+                          "does not enforce",
+                    reason=f"'{step.name or step.type}' in '{wf.name}' says "
+                           f"the meeting is tomorrow under a wait anchored "
+                           f"{_human(far[1])} before it, but the calendar it "
+                           f"books against was not exported with its "
+                           f"scheduling settings — so whether a same-day "
+                           f"booking can reach this step cannot be decided.",
+                    needs="calendars exported as full objects, carrying "
+                          "allowBookingAfter (minimum scheduling notice)",
+                    category="routing")
+                return
+            rec_id = next(c for c in cal_ids if c in settings_bearing)
+            rec = settings_bearing[rec_id]
+            notice = _notice_minutes(rec)
+            if notice is None or notice >= 1440:
+                continue
+            cal_name = str(rec.get("name") or inv.calendars.get(rec_id) or rec_id)
+            notice_text = ("no minimum scheduling notice" if notice == 0
+                           else f"a minimum notice of only {_human(-notice)}")
+            yield _finding(
+                "GHL106", "medium", wf,
+                f"'{step.name or step.type}' says \"{claim[:60]}\" — the "
+                f"'{cal_name}' calendar takes same-day bookings",
+                f"'{step.name or step.type}' tells the contact \"{claim}.\" It "
+                f"sits under '{far[0].name or far[0].type}', anchored "
+                f"{_human(far[1])} before the appointment, and the "
+                f"'{cal_name}' calendar has {notice_text} — a 2:00 PM slot can "
+                f"be booked at 1:30 PM. For anyone who books inside "
+                f"{_human(far[1])}, the wait's target is already in the past "
+                f"when they reach it: the workflow either releases at once — "
+                f"confirmation, then within a minute a message saying the "
+                f"call is tomorrow — or holds them for a moment that never "
+                f"comes and sends no reminder at all.",
+                f"Give the '{cal_name}' calendar a minimum scheduling notice "
+                f"of {_human(far[1])} (Calendars → {cal_name} → Availability). "
+                f"If same-day booking is wanted, drop the day-word — "
+                f"\"we're on {{{{appointment.start_time}}}}\" is true whenever "
+                f"it sends — and set the wait's already-passed behaviour to "
+                f"skip to the next wait. Then book a slot for later today and "
+                f"read what arrives.",
+                step=step.name or step.type,
+                cost="Same-day bookings are the highest no-show risk you take, "
+                     "and these are the contacts told the wrong day within a "
+                     "minute of confirming.",
+                reach=len(wf.outbound_after(i)))
+            break
